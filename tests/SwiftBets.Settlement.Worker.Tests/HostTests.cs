@@ -50,6 +50,8 @@ public sealed class HostTests : IClassFixture<HostTests.Factory>
         builder.UseSetting("ConnectionStrings:SbSettlement", "Server=127.0.0.1,1;Database=x;User Id=x;Password=x;TrustServerCertificate=True;Connect Timeout=1");
         builder.UseSetting("Kafka:BootstrapServers", "127.0.0.1:1");
         builder.UseSetting("ConnectionStrings:Redis", "127.0.0.1:1,connectTimeout=200");
+            builder.UseSetting("Jwt:Authority", "https://identity.test");
+            builder.UseSetting("Settlement:RunConsumers", "false");
         }
     }
 }

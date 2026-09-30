@@ -8,6 +8,8 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/SwiftBets.Settlement.ArchitectureTests/SwiftBets.Settlement.ArchitectureTests.csproj" />
+    <Project Path="tests/SwiftBets.Settlement.Domain.Tests/SwiftBets.Settlement.Domain.Tests.csproj" />
+    <Project Path="tests/SwiftBets.Settlement.Infrastructure.Tests/SwiftBets.Settlement.Infrastructure.Tests.csproj" />
     <Project Path="tests/SwiftBets.Settlement.Migrator.Tests/SwiftBets.Settlement.Migrator.Tests.csproj" />
     <Project Path="tests/SwiftBets.Settlement.Worker.Tests/SwiftBets.Settlement.Worker.Tests.csproj" />
   </Folder>

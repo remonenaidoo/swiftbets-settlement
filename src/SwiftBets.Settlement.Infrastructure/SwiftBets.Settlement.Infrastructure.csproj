@@ -8,6 +8,11 @@
     <PackageReference Include="SwiftBets.BuildingBlocks.Messaging" />
     <PackageReference Include="SwiftBets.BuildingBlocks.Outbox" />
     <PackageReference Include="SwiftBets.BuildingBlocks.Redis" />
+    <PackageReference Include="Dapper" />
     <ProjectReference Include="../SwiftBets.Settlement.Application/SwiftBets.Settlement.Application.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Sql/*.sql" />
+    <EmbeddedResource Include="Redis/*.lua" />
   </ItemGroup>
 </Project>
