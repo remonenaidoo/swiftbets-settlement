@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SwiftBets.Settlement.Application/SwiftBets.Settlement.Application.csproj" />
+    <Project Path="src/SwiftBets.Settlement.Domain/SwiftBets.Settlement.Domain.csproj" />
+    <Project Path="src/SwiftBets.Settlement.Infrastructure/SwiftBets.Settlement.Infrastructure.csproj" />
+    <Project Path="src/SwiftBets.Settlement.Migrator/SwiftBets.Settlement.Migrator.csproj" />
+    <Project Path="src/SwiftBets.Settlement.Worker/SwiftBets.Settlement.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SwiftBets.Settlement.ArchitectureTests/SwiftBets.Settlement.ArchitectureTests.csproj" />
+    <Project Path="tests/SwiftBets.Settlement.Migrator.Tests/SwiftBets.Settlement.Migrator.Tests.csproj" />
+    <Project Path="tests/SwiftBets.Settlement.Worker.Tests/SwiftBets.Settlement.Worker.Tests.csproj" />
+  </Folder>
+</Solution>

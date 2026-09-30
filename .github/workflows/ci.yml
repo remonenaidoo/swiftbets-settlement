@@ -1,0 +1,20 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  dotnet:
+    uses: remonenaidoo/swiftbets-platform/.github/workflows/dotnet.yml@main
+    with:
+      images: '[{"name": "swiftbets-settlement", "dockerfile": "deploy/SwiftBets.Settlement.Worker.Dockerfile"}, {"name": "swiftbets-settlement-migrator", "dockerfile": "deploy/SwiftBets.Settlement.Migrator.Dockerfile"}]'
+    permissions:
+      contents: read
+      packages: write
+      security-events: write

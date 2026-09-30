@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="SwiftBets.BuildingBlocks.Core" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
+    <PackageReference Include="SwiftBets.BuildingBlocks.Persistence" />
+    <PackageReference Include="SwiftBets.BuildingBlocks.Messaging" />
+    <PackageReference Include="SwiftBets.BuildingBlocks.Outbox" />
+    <PackageReference Include="SwiftBets.BuildingBlocks.Redis" />
+    <ProjectReference Include="../SwiftBets.Settlement.Application/SwiftBets.Settlement.Application.csproj" />
+  </ItemGroup>
+</Project>
