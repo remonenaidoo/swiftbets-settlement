@@ -2,6 +2,9 @@ using SwiftBets.BuildingBlocks.Observability;
 using SwiftBets.BuildingBlocks.Web;
 using SwiftBets.Settlement.Application;
 using SwiftBets.Settlement.Application.Handlers;
+using SwiftBets.Settlement.Application.Ports;
+using SwiftBets.Contracts.Errors;
+using SwiftBets.Contracts.Serialization;
 using SwiftBets.Settlement.Infrastructure;
 
 if (HealthProbe.TryRun(args) is { } probeExitCode)
@@ -22,9 +25,15 @@ app.UseSwiftBetsWeb();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapSwiftBetsOperationalEndpoints();
+app.MapGet("/coupons/{couponId:guid}/state", async (Guid couponId, ISettlementStore store, HttpContext context, CancellationToken cancellationToken) =>
+        await store.GetCouponStateAsync(couponId, cancellationToken) is { } state
+            ? Results.Json(state, ContractJson.Options)
+            : Error.NotFound("coupon_not_found", "Settlement has not indexed that coupon.").ToHttpResult(context))
+    .RequireAuthorization(Roles.OperatorOrService);
+app.MapSwiftBetsFaultEndpoints();
 app.MapPost("/coupons/{couponId:guid}/refresh", async (Guid couponId, ReconcileHandler reconciler) =>
         Results.Ok(new { couponId, resettled = await reconciler.RepairAsync(couponId, "operator_refresh") }))
-    .RequireAuthorization(Roles.Operator);
+    .RequireAuthorization(Roles.OperatorOrService);
 
 await app.RunAsync();
 return 0;

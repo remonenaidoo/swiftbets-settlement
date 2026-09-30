@@ -4,6 +4,8 @@ public interface ISettlementStore
 {
     Task<ISettlementTransaction> BeginAsync();
 
+    Task<CouponStateView?> GetCouponStateAsync(Guid couponId, CancellationToken cancellationToken);
+
     /// <summary>Coupons whose every leg is evaluated but whose latest evaluation is newer than their latest settlement, quiet for at least <paramref name="quietFor"/>.</summary>
     Task<IReadOnlyList<Guid>> FindUnsettledCouponsAsync(TimeSpan quietFor, int limit, CancellationToken cancellationToken);
 

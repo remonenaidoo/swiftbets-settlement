@@ -145,7 +145,7 @@ public sealed class SettlementFlowTests(SqlServerFixture sql, RedisFixture redis
         {
             foreach (var evaluated in await EvaluationsAsync(0))
             {
-                await new SettleCouponHandler(_store, _counter, Settler).HandleAsync(evaluated);
+                await new SettleCouponHandler(_store, _counter, Settler, new NoFaults()).HandleAsync(evaluated);
             }
         }
 
@@ -168,7 +168,7 @@ public sealed class SettlementFlowTests(SqlServerFixture sql, RedisFixture redis
         {
             foreach (var evaluated in await EvaluationsAsync(_deliveredOutbox == int.MaxValue ? 0 : _deliveredOutbox))
             {
-                await new SettleCouponHandler(_store, _counter, Settler).HandleAsync(evaluated);
+                await new SettleCouponHandler(_store, _counter, Settler, new NoFaults()).HandleAsync(evaluated);
             }
         }
 
