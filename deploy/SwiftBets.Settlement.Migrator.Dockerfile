@@ -2,7 +2,7 @@
 FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0-noble AS build
 ARG TARGETARCH
 WORKDIR /src
-COPY global.json nuget.config Directory.Build.props Directory.Packages.props ./
+COPY global.json nuget.config Directory.Build.props Directory.Packages.props .editorconfig ./
 COPY .packages/ .packages/
 COPY src/ src/
 RUN dotnet restore src/SwiftBets.Settlement.Migrator/SwiftBets.Settlement.Migrator.csproj -a $TARGETARCH
