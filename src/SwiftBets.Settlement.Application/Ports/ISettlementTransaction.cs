@@ -8,7 +8,13 @@ public interface ISettlementTransaction : IAsyncDisposable
 {
     Task<bool> TryRecordInboxAsync(string consumer, Guid eventId);
 
-    Task InsertCouponAsync(IndexedCoupon coupon, IReadOnlyList<IndexedLeg> legs);
+    /// <summary>Indexes a coupon with its legs and bets; false when it is already indexed (it was published as V1 and V2).</summary>
+    Task<bool> TryInsertCouponAsync(IndexedCoupon coupon, IReadOnlyList<IndexedLeg> legs, IReadOnlyList<SettlementBet> bets);
+
+    Task<IReadOnlyList<SettlementBet>> GetBetsAsync(Guid couponId);
+
+    /// <summary>A coupon indexed from V1 takes placement's bet id when its V2 twin arrives; nothing else changes.</summary>
+    Task AdoptBetIdAsync(Guid couponId, SettlementBet bet);
 
     /// <summary>Reads results for the fixtures under lock, so a result landing concurrently is either seen here or sees these legs.</summary>
     Task<IReadOnlyDictionary<string, FixtureResult>> LockResultsAsync(IReadOnlyList<string> fixtureIds);

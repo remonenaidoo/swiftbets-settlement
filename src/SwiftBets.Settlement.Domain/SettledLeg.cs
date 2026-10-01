@@ -1,3 +1,4 @@
 namespace SwiftBets.Settlement.Domain;
 
-public sealed record SettledLeg(decimal Odds, LegOutcome Outcome);
+/// <summary>A leg's latest outcome. Legs are passed in coupon order; a banker is in every line of every bet.</summary>
+public sealed record SettledLeg(decimal Odds, LegOutcome Outcome, bool IsBanker = false);

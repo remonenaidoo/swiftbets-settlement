@@ -27,7 +27,9 @@ public sealed class CouponSettler(ISettlementStore store, TimeProvider time)
             return null;
         }
 
-        var settlement = CouponSettlement.Of(coupon.Stake, [.. evaluations.Select(e => new SettledLeg(e.Odds, e.Outcome))]);
+        var bets = await transaction.GetBetsAsync(couponId);
+        var legs = evaluations.OrderBy(e => e.Position).Select(e => new SettledLeg(e.Odds, e.Outcome, e.IsBanker)).ToList();
+        var settlement = bets.Count == 0 ? CouponSettlement.Of(coupon.Stake, legs) : CouponSettlement.Of(bets, legs);
         var previous = await transaction.GetLatestSettlementAsync(couponId);
         if (previous is not null && previous.Outcome == settlement.Outcome && previous.Payout == settlement.Payout)
         {
@@ -41,6 +43,10 @@ public sealed class CouponSettler(ISettlementStore store, TimeProvider time)
         var settled = new CouponSettledV1(couponId, coupon.PunterId, version, SettlementMapping.Map(settlement.Outcome),
             new Money(coupon.Stake, coupon.Currency), settlement.EffectiveOdds, new Money(settlement.Payout, coupon.Currency), time.GetUtcNow());
         await transaction.EnqueueAsync(Topics.CouponSettled, couponId.ToString(), settled);
+        await transaction.EnqueueAsync(Topics.CouponSettledV2, couponId.ToString(), new CouponSettledV2(couponId, coupon.PunterId, version, settled.Outcome,
+            settled.Stake, settled.TargetPayout,
+            [.. settlement.Bets.Select(b => new BetSettlementV2(b.BetId, SettlementMapping.Map(b.Outcome), b.WinningLines, b.VoidLines, b.LosingLines, new Money(b.Return, coupon.Currency)))],
+            settled.SettledAt));
         await transaction.CommitAsync();
         return settled;
     }
