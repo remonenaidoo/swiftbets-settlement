@@ -1,2 +1,2 @@
-INSERT INTO settlement.Legs (LegId, CouponId, FixtureId, MarketId, SelectionId, Odds)
-VALUES (@LegId, @CouponId, @FixtureId, @MarketId, @SelectionId, @Odds);
+INSERT INTO settlement.Legs (LegId, CouponId, FixtureId, MarketId, SelectionId, Odds, IsBanker, Position)
+VALUES (@LegId, @CouponId, @FixtureId, @MarketId, @SelectionId, @Odds, @IsBanker, @Position);

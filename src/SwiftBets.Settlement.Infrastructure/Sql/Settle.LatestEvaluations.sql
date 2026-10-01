@@ -1,4 +1,4 @@
-SELECT e.LegId, e.ResultVersion, e.Outcome, l.Odds
+SELECT e.LegId, e.ResultVersion, e.Outcome, l.Odds, l.IsBanker, l.Position
 FROM
 (
     SELECT LegId, ResultVersion, Outcome, ROW_NUMBER() OVER (PARTITION BY LegId ORDER BY ResultVersion DESC) AS Recency
@@ -6,4 +6,5 @@ FROM
     WHERE CouponId = @CouponId
 ) e
 JOIN settlement.Legs l ON l.LegId = e.LegId
-WHERE e.Recency = 1;
+WHERE e.Recency = 1
+ORDER BY l.Position;

@@ -39,6 +39,45 @@ public sealed class SettlementFlowTests(SqlServerFixture sql, RedisFixture redis
     }
 
     [Fact]
+    public async Task A_banker_trixie_settles_from_out_of_order_results_and_resettles_on_a_correction()
+    {
+        var flow = await Flow.CreateAsync(sql, redis);
+        var coupon = flow.BankerTrixie(("b1", "home", 2.00m), ("t2", "home", 2.00m), ("t3", "draw", 3.00m), ("t4", "over", 1.50m));
+
+        await flow.ResultAsync("t3", 1, ResultStatus.Official, 1, 1);
+        await flow.ResultAsync("b1", 1, ResultStatus.Official, 2, 0);
+        await flow.PlaceAsync(coupon);
+        await flow.ResultAsync("t4", 1, ResultStatus.Official, 3, 1);
+        await flow.ResultAsync("t2", 1, ResultStatus.Official, 0, 1);
+        await flow.ResultAsync("t2", 2, ResultStatus.Correction, 2, 0);
+
+        // Banker x (t3, t4) only, then every line once t2 is corrected to a home win.
+        (await flow.SettlementsAsync(coupon.CouponId)).ShouldBe([(1, 900L), (2, 1_200L + 600L + 900L + 1_800L)]);
+        var latest = (await flow.SettledV2Async())[^1];
+        latest.Bets.Single().ShouldBe(new BetSettlementV2(coupon.Bets[0].BetId, CouponOutcome.Won, 4, 0, 0, new Money(4_500, "ZAR")));
+        (await flow.OutboxCountAsync("settlement.coupon-settled")).ShouldBe(4);
+    }
+
+    [Fact]
+    public async Task A_coupon_published_as_v1_and_v2_is_indexed_once_and_takes_placements_bet_id()
+    {
+        var flow = await Flow.CreateAsync(sql, redis);
+        var v1 = flow.Acca(("d1", "home", 2.00m), ("d2", "away", 3.00m));
+        var betId = Guid.NewGuid();
+        var v2 = new CouponPlacedV2(v1.CouponId, v1.PunterId, v1.Stake, v1.PotentialPayout,
+            [.. v1.Legs.Select(l => new CouponLegV2(l.LegId, l.FixtureId, l.MarketId, l.SelectionId, l.Odds, l.OfferVersion, false))],
+            [new CouponBetV2(betId, "accumulator", [2], 1, v1.Stake, v1.Stake, v1.PotentialPayout)], v1.PlacedAt);
+
+        await flow.PlaceAsync(v1);
+        await flow.PlaceAsync(v2);
+        await flow.ResultAsync("d1", 1, ResultStatus.Official, 1, 0);
+        await flow.ResultAsync("d2", 1, ResultStatus.Official, 0, 2);
+
+        (await flow.SettlementsAsync(v1.CouponId)).ShouldBe([(1, 6_000L)]);
+        (await flow.SettledV2Async()).Single().Bets.Single().BetId.ShouldBe(betId);
+    }
+
+    [Fact]
     public async Task Duplicate_result_and_redelivered_evaluations_are_no_ops()
     {
         var flow = await Flow.CreateAsync(sql, redis);
@@ -119,6 +158,25 @@ public sealed class SettlementFlowTests(SqlServerFixture sql, RedisFixture redis
             var odds = legs.Aggregate(1m, (t, l) => t * l.Odds);
             return new CouponPlacedV1(id, Guid.NewGuid(), legs.Length == 1 ? BetType.Single : BetType.Accumulator, new Money(1_000, "ZAR"), odds, new Money((long)(1_000 * odds), "ZAR"),
                 [.. legs.Select(l => new CouponLegV1(Guid.NewGuid(), Scoped(l.Fixture), $"{Scoped(l.Fixture)}-m", l.Selection, l.Odds, 1))], DateTimeOffset.UtcNow);
+        }
+
+        /// <summary>The first leg is a banker; the rest make a Trixie at R1 a line.</summary>
+        public CouponPlacedV2 BankerTrixie(params (string Fixture, string Selection, decimal Odds)[] legs) =>
+            new(Guid.NewGuid(), Guid.NewGuid(), new Money(400, "ZAR"), new Money(10_000, "ZAR"),
+                [.. legs.Select((l, i) => new CouponLegV2(Guid.NewGuid(), Scoped(l.Fixture), $"{Scoped(l.Fixture)}-m", l.Selection, l.Odds, 1, i == 0))],
+                [new CouponBetV2(Guid.NewGuid(), "trixie", [2, 3], 4, new Money(100, "ZAR"), new Money(400, "ZAR"), new Money(10_000, "ZAR"))], DateTimeOffset.UtcNow);
+
+        public async Task PlaceAsync(CouponPlacedV2 coupon)
+        {
+            await new IndexCouponHandler(_store, TimeProvider.System).HandleAsync(Guid.NewGuid(), coupon);
+            await SettleNewEvaluationsAsync();
+        }
+
+        public async Task<IReadOnlyList<CouponSettledV2>> SettledV2Async()
+        {
+            await using var connection = new SqlConnection(_connectionString);
+            var payloads = await connection.QueryAsync<byte[]>("SELECT Payload FROM outbox.Messages WHERE EventType = 'settlement.coupon-settled' AND Topic LIKE '%.coupon-settled.v2.%' ORDER BY Sequence");
+            return [.. payloads.Select(p => EnvelopeSerializer.Deserialize<CouponSettledV2>(p)!.Payload)];
         }
 
         public async Task PlaceAsync(CouponPlacedV1 coupon)
