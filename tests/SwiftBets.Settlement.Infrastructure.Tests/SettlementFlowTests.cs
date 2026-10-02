@@ -11,6 +11,8 @@ using SwiftBets.Contracts.Money;
 using SwiftBets.Contracts.Offer;
 using SwiftBets.Contracts.Placement;
 using SwiftBets.Contracts.Settlement;
+using SwiftBets.Contracts.Trading;
+using Microsoft.Extensions.Logging.Abstractions;
 using SwiftBets.Settlement.Application.Handlers;
 using SwiftBets.Settlement.Infrastructure.Persistence;
 using SwiftBets.Settlement.Infrastructure.Redis;
@@ -36,6 +38,36 @@ public sealed class SettlementFlowTests(SqlServerFixture sql, RedisFixture redis
 
         var settlements = await flow.SettlementsAsync(coupon.CouponId);
         settlements.ShouldBe([(1, 3_000L), (2, 0L)]);
+    }
+
+    [Fact]
+    public async Task A_trader_voids_a_market_after_the_feed_settled_it_and_a_later_feed_correction_cannot_undo_it()
+    {
+        var flow = await Flow.CreateAsync(sql, redis);
+        var coupon = flow.Acca(("m1", "home", 2.00m), ("m2", "away", 3.00m));
+        await flow.PlaceAsync(coupon);
+        await flow.ResultAsync("m1", 1, ResultStatus.Official, 2, 0);
+        await flow.ResultAsync("m2", 1, ResultStatus.Official, 0, 1);
+
+        var voidMarket = flow.Manual(ManualResultScope.Market, ManualResultAction.Void, "m2");
+        (await flow.ManualAsync(voidMarket)).ShouldBe(1);
+        (await flow.ManualAsync(voidMarket)).ShouldBe(0);
+        await flow.ResultAsync("m2", 2, ResultStatus.Correction, 0, 2);
+
+        // Won at 6.00, then the void leaves only the home leg at 2.00; the correction changes nothing.
+        (await flow.SettlementsAsync(coupon.CouponId)).ShouldBe([(1, 6_000L), (2, 2_000L)]);
+    }
+
+    [Fact]
+    public async Task A_trader_settles_a_market_the_feed_never_resulted()
+    {
+        var flow = await Flow.CreateAsync(sql, redis);
+        var coupon = flow.Acca(("s1", "draw", 3.00m));
+        await flow.PlaceAsync(coupon);
+
+        await flow.ManualAsync(flow.Manual(ManualResultScope.Fixture, ManualResultAction.Settle, "s1", "draw"));
+
+        (await flow.SettlementsAsync(coupon.CouponId)).ShouldBe([(1, 3_000L)]);
     }
 
     [Fact]
@@ -197,6 +229,17 @@ public sealed class SettlementFlowTests(SqlServerFixture sql, RedisFixture redis
             {
                 _deliveredOutbox = int.MaxValue;
             }
+        }
+
+        public ManualResultV1 Manual(ManualResultScope scope, ManualResultAction action, string fixture, string? winner = null) =>
+            new(Guid.NewGuid(), scope, action, Scoped(fixture), scope == ManualResultScope.Market ? $"{Scoped(fixture)}-m" : null, null, winner, null,
+                "trader decision", Guid.NewGuid(), DateTimeOffset.UtcNow);
+
+        public async Task<int> ManualAsync(ManualResultV1 manual)
+        {
+            var evaluated = await new ApplyManualResultHandler(_store, TimeProvider.System, NullLogger<ApplyManualResultHandler>.Instance).HandleAsync(manual);
+            await SettleNewEvaluationsAsync();
+            return evaluated;
         }
 
         public async Task RedeliverEvaluationsAsync()
