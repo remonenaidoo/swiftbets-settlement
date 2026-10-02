@@ -1,1 +1,1 @@
-SELECT CouponId, PunterId, Stake, Currency, LegCount FROM settlement.Coupons WITH (UPDLOCK, ROWLOCK) WHERE CouponId = @CouponId;
+SELECT CouponId, PunterId, Stake, Currency, LegCount, PlacedAt FROM settlement.Coupons WITH (UPDLOCK, ROWLOCK) WHERE CouponId = @CouponId;

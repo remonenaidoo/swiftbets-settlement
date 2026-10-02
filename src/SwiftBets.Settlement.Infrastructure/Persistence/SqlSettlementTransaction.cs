@@ -17,7 +17,7 @@ internal sealed class SqlSettlementTransaction(SqlConnection connection, SqlTran
 
     public async Task<bool> TryInsertCouponAsync(IndexedCoupon coupon, IReadOnlyList<IndexedLeg> legs, IReadOnlyList<SettlementBet> bets)
     {
-        if (await connection.ExecuteAsync(Sql.Get("Settle.InsertCoupon"), new { coupon.CouponId, coupon.PunterId, coupon.Stake, coupon.Currency, coupon.LegCount, Now = time.GetUtcNow() }, transaction) != 1)
+        if (await connection.ExecuteAsync(Sql.Get("Settle.InsertCoupon"), new { coupon.CouponId, coupon.PunterId, coupon.Stake, coupon.Currency, coupon.LegCount, Now = time.GetUtcNow(), coupon.PlacedAt }, transaction) != 1)
         {
             return false;
         }
@@ -49,6 +49,11 @@ internal sealed class SqlSettlementTransaction(SqlConnection connection, SqlTran
 
     public async Task<IReadOnlyList<IndexedLeg>> GetLegsForFixtureAsync(string fixtureId) =>
         [.. await connection.QueryAsync<IndexedLeg>(Sql.Get("Settle.LegsForFixture"), new { FixtureId = fixtureId }, transaction)];
+
+    public async Task<IReadOnlyList<TimedLeg>> GetTimedLegsForFixtureAsync(string fixtureId) =>
+        [.. (await connection.QueryAsync<(Guid LegId, Guid CouponId, string FixtureId, string MarketId, string SelectionId, decimal Odds, bool IsBanker, int Position, DateTimeOffset? PlacedAt)>(
+            Sql.Get("Settle.TimedLegsForFixture"), new { FixtureId = fixtureId }, transaction))
+            .Select(r => new TimedLeg(new IndexedLeg(r.LegId, r.CouponId, r.FixtureId, r.MarketId, r.SelectionId, r.Odds, r.IsBanker, r.Position), r.PlacedAt))];
 
     public async Task<bool> TryInsertEvaluationAsync(IndexedLeg leg, int resultVersion, LegOutcome outcome) =>
         await connection.ExecuteScalarAsync<int>(Sql.Get("Settle.InsertEvaluation"),
