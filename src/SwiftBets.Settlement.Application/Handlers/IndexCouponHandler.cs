@@ -53,13 +53,29 @@ public sealed class IndexCouponHandler(ISettlementStore store, TimeProvider time
         {
             if (results.TryGetValue(leg.FixtureId, out var result) && result.IsSettleable)
             {
-                var outcome = LegRules.Evaluate(leg.SelectionId, result);
-                await transaction.TryInsertEvaluationAsync(leg, result.Version, outcome);
-                await transaction.EnqueueAsync(Topics.LegEvaluated, leg.CouponId.ToString(),
-                    new LegEvaluatedV1(leg.CouponId, leg.LegId, leg.FixtureId, result.Version, SettlementMapping.Map(outcome), time.GetUtcNow()));
+                await EvaluateAsync(transaction, leg, result.Version, LegRules.Evaluate(leg.SelectionId, result));
+            }
+        }
+
+        // A trader's result that landed before this coupon's placement event still applies to it, above any feed version.
+        var manuals = await transaction.GetManualResultsAsync([.. legs.Select(l => l.FixtureId).Distinct(StringComparer.Ordinal)]);
+        foreach (var manual in manuals.Where(m => ManualResultRules.AppliesTo(m, coupon.PlacedAt)))
+        {
+            foreach (var leg in legs.Where(l => ManualResultRules.InScope(manual, l)))
+            {
+                await EvaluateAsync(transaction, leg, manual.Version, ManualResultRules.Outcome(manual, leg));
             }
         }
 
         await transaction.CommitAsync();
+    }
+
+    private async Task EvaluateAsync(ISettlementTransaction transaction, IndexedLeg leg, int version, Domain.LegOutcome outcome)
+    {
+        if (await transaction.TryInsertEvaluationAsync(leg, version, outcome))
+        {
+            await transaction.EnqueueAsync(Topics.LegEvaluated, leg.CouponId.ToString(),
+                new LegEvaluatedV1(leg.CouponId, leg.LegId, leg.FixtureId, version, SettlementMapping.Map(outcome), time.GetUtcNow()));
+        }
     }
 }
