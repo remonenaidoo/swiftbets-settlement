@@ -6,10 +6,13 @@ namespace SwiftBets.Settlement.Application.Ports;
 /// </summary>
 public interface IProgressCounter
 {
-    /// <returns>Whether the token was new, and how many distinct legs are resolved.</returns>
+    /// <returns>Whether the token was new, and how many distinct legs are resolved; -1 once the coupon is final.</returns>
     Task<(bool Applied, int ResolvedLegs)> RecordAsync(Guid couponId, Guid legId, int resultVersion);
 
     Task<int> ResolvedLegsAsync(Guid couponId);
+
+    /// <summary>Stops the Lua script counting any further evaluation for a cashed-out coupon.</summary>
+    Task MarkFinalAsync(Guid couponId);
 
     Task RebuildAsync(Guid couponId, IReadOnlyList<LegEvaluation> evaluations);
 }

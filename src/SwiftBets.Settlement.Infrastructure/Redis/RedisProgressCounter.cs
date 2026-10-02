@@ -13,12 +13,17 @@ public sealed class RedisProgressCounter(IConnectionMultiplexer redis) : IProgre
 
     public static string Legs(Guid couponId) => $"settle:{couponId:N}:legs";
 
+    public static string Final(Guid couponId) => $"settle:{couponId:N}:final";
+
     public async Task<(bool Applied, int ResolvedLegs)> RecordAsync(Guid couponId, Guid legId, int resultVersion)
     {
         var result = (RedisResult[])(await redis.GetDatabase().ScriptEvaluateAsync(
-            Record.ExecutableScript, [Tokens(couponId), Legs(couponId)], [$"{legId:N}:{resultVersion}", legId.ToString("N"), resultVersion, TtlSeconds]))!;
+            Record.ExecutableScript, [Tokens(couponId), Legs(couponId), Final(couponId)], [$"{legId:N}:{resultVersion}", legId.ToString("N"), resultVersion, TtlSeconds]))!;
         return ((long)result[0] == 1, (int)(long)result[1]);
     }
+
+    public async Task MarkFinalAsync(Guid couponId) =>
+        await redis.GetDatabase().StringSetAsync(Final(couponId), "cashed-out", TimeSpan.FromSeconds(TtlSeconds));
 
     public async Task<int> ResolvedLegsAsync(Guid couponId) => (int)await redis.GetDatabase().HashLengthAsync(Legs(couponId));
 

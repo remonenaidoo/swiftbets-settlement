@@ -51,9 +51,26 @@ internal sealed class SqlSettlementTransaction(SqlConnection connection, SqlTran
         [.. await connection.QueryAsync<IndexedLeg>(Sql.Get("Settle.LegsForFixture"), new { FixtureId = fixtureId }, transaction)];
 
     public async Task<IReadOnlyList<TimedLeg>> GetTimedLegsForFixtureAsync(string fixtureId) =>
-        [.. (await connection.QueryAsync<(Guid LegId, Guid CouponId, string FixtureId, string MarketId, string SelectionId, decimal Odds, bool IsBanker, int Position, DateTimeOffset? PlacedAt)>(
+        [.. (await connection.QueryAsync<(Guid LegId, Guid CouponId, string FixtureId, string MarketId, string SelectionId, decimal Odds, bool IsBanker, int Position, DateTimeOffset? PlacedAt, byte? FinalState)>(
             Sql.Get("Settle.TimedLegsForFixture"), new { FixtureId = fixtureId }, transaction))
-            .Select(r => new TimedLeg(new IndexedLeg(r.LegId, r.CouponId, r.FixtureId, r.MarketId, r.SelectionId, r.Odds, r.IsBanker, r.Position), r.PlacedAt))];
+            .Select(r => new TimedLeg(new IndexedLeg(r.LegId, r.CouponId, r.FixtureId, r.MarketId, r.SelectionId, r.Odds, r.IsBanker, r.Position), r.PlacedAt, (FinalState?)r.FinalState))];
+
+    public async Task<FinalState?> GetFinalStateAsync(Guid couponId) =>
+        (FinalState?)await connection.ExecuteScalarAsync<byte?>(Sql.Get("Settle.FinalState"), new { CouponId = couponId }, transaction);
+
+    public Task MarkFinalAsync(Guid couponId, FinalState state) =>
+        connection.ExecuteAsync(Sql.Get("Settle.MarkFinal"), new { CouponId = couponId, FinalState = (byte)state }, transaction);
+
+    public Task<CashoutRecord?> GetCashoutAsync(Guid cashoutId) =>
+        connection.QuerySingleOrDefaultAsync<CashoutRecord>(Sql.Get("Settle.GetCashout"), new { CashoutId = cashoutId }, transaction);
+
+    public Task InsertCashoutAsync(CashoutRecord cashout) =>
+        connection.ExecuteAsync(Sql.Get("Settle.InsertCashout"), cashout, transaction);
+
+    public async Task<IReadOnlyList<CouponLeg>> GetCouponLegsAsync(Guid couponId) =>
+        [.. (await connection.QueryAsync<(Guid LegId, string FixtureId, string MarketId, string SelectionId, decimal Odds, bool IsBanker, int Position, byte? Outcome)>(
+            Sql.Get("Settle.CouponLegs"), new { CouponId = couponId }, transaction))
+            .Select(r => new CouponLeg(r.LegId, r.FixtureId, r.MarketId, r.SelectionId, r.Odds, r.IsBanker, r.Position, (LegOutcome?)r.Outcome))];
 
     public async Task<bool> TryInsertEvaluationAsync(IndexedLeg leg, int resultVersion, LegOutcome outcome) =>
         await connection.ExecuteScalarAsync<int>(Sql.Get("Settle.InsertEvaluation"),

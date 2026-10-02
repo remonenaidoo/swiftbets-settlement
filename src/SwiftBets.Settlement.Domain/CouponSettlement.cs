@@ -37,6 +37,11 @@ public sealed record CouponSettlement(CouponOutcome Outcome, decimal EffectiveOd
         return new CouponSettlement(outcome, odds, payout, settled);
     }
 
+    /// <summary>A cashout: the agreed amount replaces whatever the legs would have paid, as one settled bet.</summary>
+    public static CouponSettlement CashedOut(Guid betId, long stake, long amount) =>
+        new(CouponOutcome.CashedOut, stake == 0 ? 0m : decimal.Round((decimal)amount / stake, 6, MidpointRounding.ToZero), amount,
+            [new SettledBet(betId, CouponOutcome.CashedOut, 0, 0, 0, amount)]);
+
     public bool SameAs(CouponSettlement? other) => other is not null && other.Outcome == Outcome && other.Payout == Payout;
 
     private static SettledBet SettleBet(SettlementBet bet, List<SettledLeg> bankers, List<SettledLeg> others)

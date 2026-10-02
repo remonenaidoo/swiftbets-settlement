@@ -12,6 +12,18 @@ public interface ISettlementTransaction : IAsyncDisposable
     /// <summary>Legs on a fixture with their coupon's placement time, for time-voids.</summary>
     Task<IReadOnlyList<TimedLeg>> GetTimedLegsForFixtureAsync(string fixtureId);
 
+    /// <summary>The coupon's final state, read under the coupon lock taken by <see cref="LockCouponAsync"/>.</summary>
+    Task<Domain.FinalState?> GetFinalStateAsync(Guid couponId);
+
+    Task MarkFinalAsync(Guid couponId, Domain.FinalState state);
+
+    Task<CashoutRecord?> GetCashoutAsync(Guid cashoutId);
+
+    Task InsertCashoutAsync(CashoutRecord cashout);
+
+    /// <summary>Every leg of the coupon in position order, with its latest evaluation.</summary>
+    Task<IReadOnlyList<CouponLeg>> GetCouponLegsAsync(Guid couponId);
+
     Task<bool> TryInsertCouponAsync(IndexedCoupon coupon, IReadOnlyList<IndexedLeg> legs, IReadOnlyList<SettlementBet> bets);
 
     Task<IReadOnlyList<SettlementBet>> GetBetsAsync(Guid couponId);

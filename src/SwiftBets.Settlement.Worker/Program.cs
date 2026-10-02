@@ -6,6 +6,7 @@ using SwiftBets.Settlement.Application.Ports;
 using SwiftBets.Contracts.Errors;
 using SwiftBets.Contracts.Serialization;
 using SwiftBets.Settlement.Infrastructure;
+using SwiftBets.Settlement.Worker.Grpc;
 
 if (HealthProbe.TryRun(args) is { } probeExitCode)
 {
@@ -16,6 +17,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddSwiftBetsObservability("swiftbets-settlement");
 builder.Services.AddSwiftBetsWeb();
 builder.Services.AddSwiftBetsJwtBearer(builder.Configuration);
+builder.Services.AddGrpc(options => options.EnableDetailedErrors = builder.Environment.IsDevelopment());
 builder.Services.AddSettlementApplication();
 builder.Services.AddSettlementInfrastructure(builder.Configuration);
 
@@ -30,6 +32,7 @@ app.MapGet("/coupons/{couponId:guid}/state", async (Guid couponId, ISettlementSt
             ? Results.Json(state, ContractJson.Options)
             : Error.NotFound("coupon_not_found", "Settlement has not indexed that coupon.").ToHttpResult(context))
     .RequireAuthorization(Roles.OperatorOrService);
+app.MapGrpcService<CashoutGrpcService>();
 app.MapSwiftBetsFaultEndpoints();
 app.MapPost("/coupons/{couponId:guid}/refresh", async (Guid couponId, ReconcileHandler reconciler) =>
         Results.Ok(new { couponId, resettled = await reconciler.RepairAsync(couponId, "operator_refresh") }))

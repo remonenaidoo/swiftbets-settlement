@@ -85,6 +85,67 @@ public sealed class SettlementFlowTests(SqlServerFixture sql, RedisFixture redis
     }
 
     [Fact]
+    public async Task A_cashout_settles_at_the_agreed_amount_and_a_later_result_never_resettles_it()
+    {
+        var flow = await Flow.CreateAsync(sql, redis);
+        var coupon = flow.Acca(("co1", "home", 2.00m), ("co2", "away", 3.00m));
+        await flow.PlaceAsync(coupon);
+        await flow.ResultAsync("co1", 1, ResultStatus.Official, 2, 0);
+
+        var reply = await flow.CashOutAsync(coupon, 2_500);
+        await flow.ResultAsync("co2", 1, ResultStatus.Official, 0, 1);
+
+        reply.Accepted.ShouldBeTrue();
+        (await flow.SettlementsAsync(coupon.CouponId)).ShouldBe([(1, 2_500L)]);
+        (await flow.CashOutAsync(coupon, 2_500, reply.CashoutId)).WasApplied.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task A_cashout_on_a_settled_coupon_is_refused()
+    {
+        var flow = await Flow.CreateAsync(sql, redis);
+        var coupon = flow.Acca(("cs1", "home", 2.00m));
+        await flow.PlaceAsync(coupon);
+        await flow.ResultAsync("cs1", 1, ResultStatus.Official, 2, 0);
+
+        var reply = await flow.CashOutAsync(coupon, 1_500);
+
+        reply.RefusalCode.ShouldBe("coupon_settled");
+        (await flow.SettlementsAsync(coupon.CouponId)).ShouldBe([(1, 2_000L)]);
+    }
+
+    [Fact]
+    public async Task A_trader_void_on_a_cashed_out_coupon_is_rejected_explicitly_and_changes_nothing()
+    {
+        var flow = await Flow.CreateAsync(sql, redis);
+        var coupon = flow.Acca(("cv1", "home", 2.00m), ("cv2", "away", 3.00m));
+        await flow.PlaceAsync(coupon);
+        await flow.CashOutAsync(coupon, 1_800);
+
+        (await flow.ManualAsync(flow.Manual(ManualResultScope.Fixture, ManualResultAction.Void, "cv2"))).ShouldBe(0);
+
+        (await flow.OutboxCountAsync("trading.manual-result-rejected")).ShouldBe(1);
+        (await flow.SettlementsAsync(coupon.CouponId)).ShouldBe([(1, 1_800L)]);
+    }
+
+    [Fact]
+    public async Task A_cashout_racing_a_late_result_pays_exactly_once()
+    {
+        var flow = await Flow.CreateAsync(sql, redis);
+        var coupon = flow.Acca(("cr1", "home", 2.00m));
+        await flow.PlaceAsync(coupon);
+
+        var cashout = flow.CashOutAsync(coupon, 1_500);
+        var result = flow.ResultAsync("cr1", 1, ResultStatus.Official, 2, 0);
+        await Task.WhenAll(cashout, result);
+
+        // Whichever committed first decided; there is exactly one settlement either way.
+        var settlements = await flow.SettlementsAsync(coupon.CouponId);
+        settlements.ShouldHaveSingleItem();
+        settlements[0].Payout.ShouldBe((await cashout).Accepted ? 1_500L : 2_000L);
+    }
+
+    [Fact]
     public async Task A_trader_settles_a_market_the_feed_never_resulted()
     {
         var flow = await Flow.CreateAsync(sql, redis);
@@ -266,6 +327,14 @@ public sealed class SettlementFlowTests(SqlServerFixture sql, RedisFixture redis
         public ManualResultV1 TimeVoid(string fixture, DateTimeOffset voidFrom) =>
             new(Guid.NewGuid(), ManualResultScope.Fixture, ManualResultAction.TimeVoid, Scoped(fixture), null, null, null, voidFrom,
                 "late bets after a goal", Guid.NewGuid(), DateTimeOffset.UtcNow);
+
+        public async Task<(bool Accepted, string? RefusalCode, bool WasApplied, Guid CashoutId)> CashOutAsync(CouponPlacedV1 coupon, long amount, Guid? cashoutId = null)
+        {
+            var id = cashoutId ?? Guid.NewGuid();
+            var reply = await new CashOutHandler(_store, _counter, TimeProvider.System)
+                .HandleAsync(new CashOutHandler.Request(id, coupon.CouponId, coupon.PunterId, amount, coupon.Stake.Currency));
+            return (reply.Accepted, reply.RefusalCode, reply.WasApplied, id);
+        }
 
         public async Task<int> ManualAsync(ManualResultV1 manual)
         {

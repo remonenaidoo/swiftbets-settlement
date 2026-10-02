@@ -8,6 +8,8 @@ public static class ApplicationRegistration
     public static IServiceCollection AddSettlementApplication(this IServiceCollection services)
     {
         services.AddScoped<IndexCouponHandler>();
+        services.AddScoped<CashOutHandler>();
+        services.AddScoped<CashoutStateQuery>();
         services.AddScoped<EvaluateResultHandler>();
         services.AddScoped<CouponSettler>();
         services.AddScoped<SettleCouponHandler>();

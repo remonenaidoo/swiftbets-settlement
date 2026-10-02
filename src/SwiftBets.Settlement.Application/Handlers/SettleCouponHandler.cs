@@ -26,6 +26,10 @@ public sealed class SettleCouponHandler(ISettlementStore store, IProgressCounter
         }
 
         var (_, resolved) = await counter.RecordAsync(evaluated.CouponId, evaluated.LegId, evaluated.ResultVersion);
+        if (resolved < 0)
+        {
+            return null;
+        }
         await using (var transaction = await store.BeginAsync())
         {
             var coupon = await transaction.LockCouponAsync(evaluated.CouponId);
