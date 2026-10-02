@@ -12,6 +12,7 @@ public static class ApplicationRegistration
         services.AddScoped<CouponSettler>();
         services.AddScoped<SettleCouponHandler>();
         services.AddScoped<ReconcileHandler>();
+        services.AddScoped<ApplyManualResultHandler>();
         return services;
     }
 }
