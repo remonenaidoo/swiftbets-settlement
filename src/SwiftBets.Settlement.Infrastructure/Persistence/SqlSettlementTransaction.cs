@@ -41,6 +41,19 @@ internal sealed class SqlSettlementTransaction(SqlConnection connection, SqlTran
         (await connection.QueryAsync<ResultRow>(Sql.Get("Settle.LockResults"), new { FixtureIds = fixtureIds }, transaction))
             .ToDictionary(r => r.FixtureId, r => r.ToDomain(), StringComparer.Ordinal);
 
+    public Task SaveManualResultAsync(StoredManualResult manual) =>
+        connection.ExecuteAsync(Sql.Get("Settle.SaveManualResult"), new
+        {
+            manual.ManualResultId, manual.FixtureId, Scope = (byte)manual.Scope, Action = (byte)manual.Action, manual.MarketId, manual.CouponId,
+            manual.WinningSelectionId, manual.VoidFrom, manual.Version, manual.IssuedAt,
+        }, transaction);
+
+    public async Task<IReadOnlyList<StoredManualResult>> GetManualResultsAsync(IReadOnlyList<string> fixtureIds) =>
+        [.. (await connection.QueryAsync<(Guid ManualResultId, string FixtureId, byte Scope, byte Action, string? MarketId, Guid? CouponId, string? WinningSelectionId, DateTimeOffset? VoidFrom, int Version, DateTimeOffset IssuedAt)>(
+            Sql.Get("Settle.ManualResultsForFixtures"), new { FixtureIds = fixtureIds }, transaction))
+            .Select(r => new StoredManualResult(r.ManualResultId, r.FixtureId, (SwiftBets.Contracts.Trading.ManualResultScope)r.Scope, (SwiftBets.Contracts.Trading.ManualResultAction)r.Action,
+                r.MarketId, r.CouponId, r.WinningSelectionId, r.VoidFrom, r.Version, r.IssuedAt))];
+
     public async Task<FixtureResult?> LockResultAsync(string fixtureId) =>
         (await connection.QuerySingleOrDefaultAsync<ResultRow>(Sql.Get("Settle.LockResult"), new { FixtureId = fixtureId }, transaction))?.ToDomain();
 

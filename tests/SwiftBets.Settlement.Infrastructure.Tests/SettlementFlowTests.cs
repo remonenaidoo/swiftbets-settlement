@@ -107,6 +107,31 @@ public sealed class SettlementFlowTests(SqlServerFixture sql, RedisFixture redis
     }
 
     [Fact]
+    public async Task A_void_that_lands_before_the_coupon_is_indexed_still_voids_it()
+    {
+        var flow = await Flow.CreateAsync(sql, redis);
+        var coupon = flow.Acca(("vb1", "home", 2.00m));
+
+        (await flow.ManualAsync(flow.Manual(ManualResultScope.Fixture, ManualResultAction.Void, "vb1"))).ShouldBe(0);
+        await flow.PlaceAsync(coupon);
+
+        (await flow.SettlementsAsync(coupon.CouponId)).ShouldBe([(1, 1_000L)]);
+    }
+
+    [Fact]
+    public async Task An_earlier_time_void_still_leaves_a_later_indexed_coupon_placed_before_its_cut_off_alone()
+    {
+        var flow = await Flow.CreateAsync(sql, redis);
+        var cutOff = DateTimeOffset.UtcNow.AddMinutes(-10);
+        var early = flow.Acca(cutOff.AddMinutes(-1), ("vb2", "home", 2.00m));
+
+        await flow.ManualAsync(flow.TimeVoid("vb2", cutOff));
+        await flow.PlaceAsync(early);
+
+        (await flow.SettlementsAsync(early.CouponId)).ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task A_cashout_settles_at_the_agreed_amount_and_a_later_result_never_resettles_it()
     {
         var flow = await Flow.CreateAsync(sql, redis);

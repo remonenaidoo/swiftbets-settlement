@@ -3,7 +3,6 @@ using SwiftBets.Contracts.Messaging;
 using LegEvaluatedV1 = SwiftBets.Contracts.Settlement.LegEvaluatedV1;
 using SwiftBets.Contracts.Trading;
 using SwiftBets.Settlement.Application.Ports;
-using SwiftBets.Settlement.Domain;
 
 namespace SwiftBets.Settlement.Application.Handlers;
 
@@ -38,7 +37,9 @@ public sealed partial class ApplyManualResultHandler(ISettlementStore store, Tim
             return 0;
         }
 
-        var touched = await LegsTouchedAsync(transaction, manual);
+        var stored = ManualResultRules.From(manual, version);
+        await transaction.SaveManualResultAsync(stored);
+        var touched = await LegsTouchedAsync(transaction, manual, stored);
         foreach (var couponId in touched.Where(t => t.FinalState is not null).Select(t => t.Leg.CouponId).Distinct())
         {
             await transaction.EnqueueAsync(Topics.ManualResultRejected, couponId.ToString(), new ManualResultRejectedV1(manual.ManualResultId, couponId,
@@ -47,8 +48,7 @@ public sealed partial class ApplyManualResultHandler(ISettlementStore store, Tim
 
         foreach (var leg in touched.Where(t => t.FinalState is null).Select(t => t.Leg))
         {
-            var outcome = manual.Action is ManualResultAction.Void or ManualResultAction.TimeVoid ? LegOutcome.Void
-                : leg.SelectionId == manual.WinningSelectionId ? LegOutcome.Won : LegOutcome.Lost;
+            var outcome = ManualResultRules.Outcome(stored, leg);
             if (await transaction.TryInsertEvaluationAsync(leg, version, outcome))
             {
                 await transaction.EnqueueAsync(Topics.LegEvaluated, leg.CouponId.ToString(),
@@ -66,9 +66,9 @@ public sealed partial class ApplyManualResultHandler(ISettlementStore store, Tim
     /// no stored placement time (indexed before settlement 0004) is never voided on a guess, only counted and logged.
     /// Cashed-out coupons are included so the caller can reject them explicitly instead of skipping them silently.
     /// </summary>
-    private async Task<IReadOnlyList<TimedLeg>> LegsTouchedAsync(ISettlementTransaction transaction, ManualResultV1 manual)
+    private async Task<IReadOnlyList<TimedLeg>> LegsTouchedAsync(ISettlementTransaction transaction, ManualResultV1 manual, StoredManualResult stored)
     {
-        var inScope = (await transaction.GetTimedLegsForFixtureAsync(manual.FixtureId)).Where(t => InScope(manual, t.Leg)).ToList();
+        var inScope = (await transaction.GetTimedLegsForFixtureAsync(manual.FixtureId)).Where(t => ManualResultRules.InScope(stored, t.Leg)).ToList();
         if (manual.Action != ManualResultAction.TimeVoid)
         {
             return inScope;
@@ -80,16 +80,8 @@ public sealed partial class ApplyManualResultHandler(ISettlementStore store, Tim
             LogPlacementTimeUnknown(logger, manual.ManualResultId, unknown);
         }
 
-        return [.. inScope.Where(t => t.PlacedAt >= manual.VoidFrom)];
+        return [.. inScope.Where(t => ManualResultRules.AppliesTo(stored, t.PlacedAt))];
     }
-
-    private static bool InScope(ManualResultV1 manual, IndexedLeg leg) => manual.Scope switch
-    {
-        ManualResultScope.Fixture => true,
-        ManualResultScope.Market => leg.MarketId == manual.MarketId,
-        ManualResultScope.Coupon => leg.CouponId == manual.CouponId,
-        _ => false,
-    };
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Manual result {ManualResultId} is a time-void without a VoidFrom cut-off; skipped.")]
     private static partial void LogTimeVoidWithoutCutOff(ILogger logger, Guid manualResultId);

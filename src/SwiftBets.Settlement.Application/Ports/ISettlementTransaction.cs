@@ -34,6 +34,11 @@ public interface ISettlementTransaction : IAsyncDisposable
     /// <summary>Reads results for the fixtures under lock, so a result landing concurrently is either seen here or sees these legs.</summary>
     Task<IReadOnlyDictionary<string, FixtureResult>> LockResultsAsync(IReadOnlyList<string> fixtureIds);
 
+    Task SaveManualResultAsync(StoredManualResult manual);
+
+    /// <summary>Manual results on these fixtures, oldest version first.</summary>
+    Task<IReadOnlyList<StoredManualResult>> GetManualResultsAsync(IReadOnlyList<string> fixtureIds);
+
     Task<FixtureResult?> LockResultAsync(string fixtureId);
 
     Task SaveResultAsync(FixtureResult result);
