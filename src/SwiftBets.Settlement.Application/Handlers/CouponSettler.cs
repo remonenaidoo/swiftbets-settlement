@@ -16,7 +16,7 @@ public sealed class CouponSettler(ISettlementStore store, TimeProvider time)
     {
         await using var transaction = await store.BeginAsync();
         var coupon = await transaction.LockCouponAsync(couponId);
-        if (coupon is null)
+        if (coupon is null || await transaction.GetFinalStateAsync(couponId) is not null)
         {
             return null;
         }

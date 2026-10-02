@@ -4,6 +4,8 @@
   <ItemGroup>
     <PackageReference Include="SwiftBets.BuildingBlocks.Observability" />
     <PackageReference Include="SwiftBets.BuildingBlocks.Web" />
+    <PackageReference Include="SwiftBets.Contracts.Grpc" />
+    <PackageReference Include="Grpc.AspNetCore" />
     <ProjectReference Include="../SwiftBets.Settlement.Infrastructure/SwiftBets.Settlement.Infrastructure.csproj" />
   </ItemGroup>
 </Project>

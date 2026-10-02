@@ -26,6 +26,7 @@ internal static class SettlementMapping
     {
         DomainOutcome.Won => Contracts.Settlement.CouponOutcome.Won,
         DomainOutcome.Lost => Contracts.Settlement.CouponOutcome.Lost,
+        DomainOutcome.CashedOut => Contracts.Settlement.CouponOutcome.CashedOut,
         _ => Contracts.Settlement.CouponOutcome.Void,
     };
 }

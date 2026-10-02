@@ -17,7 +17,10 @@
     <PackageVersion Include="SwiftBets.BuildingBlocks.Redis" Version="0.7.0" />
     <PackageVersion Include="SwiftBets.BuildingBlocks.Testing" Version="0.7.0" />
     <PackageVersion Include="SwiftBets.BuildingBlocks.Web" Version="0.7.0" />
-    <PackageVersion Include="SwiftBets.Contracts" Version="1.1.0" />
+    <PackageVersion Include="SwiftBets.Contracts" Version="1.2.0" />
+    <PackageVersion Include="SwiftBets.Contracts.Grpc" Version="1.2.0" />
+    <PackageVersion Include="Grpc.AspNetCore" Version="2.84.0" />
+    <PackageVersion Include="Grpc.Net.Client" Version="2.84.0" />
     <PackageVersion Include="xunit.v3" Version="4.0.1" />
   </ItemGroup>
 </Project>
