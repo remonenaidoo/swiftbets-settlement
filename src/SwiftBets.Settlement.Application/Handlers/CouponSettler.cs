@@ -12,7 +12,7 @@ namespace SwiftBets.Settlement.Application.Handlers;
 /// </summary>
 public sealed class CouponSettler(ISettlementStore store, TimeProvider time)
 {
-    public async Task<CouponSettledV1?> SettleAsync(Guid couponId)
+    public async Task<CouponSettledV2?> SettleAsync(Guid couponId)
     {
         await using var transaction = await store.BeginAsync();
         var coupon = await transaction.LockCouponAsync(couponId);
@@ -40,13 +40,11 @@ public sealed class CouponSettler(ISettlementStore store, TimeProvider time)
 
         var version = (previous?.Version ?? 0) + 1;
         await transaction.InsertSettlementAsync(couponId, version, settlement);
-        var settled = new CouponSettledV1(couponId, coupon.PunterId, version, SettlementMapping.Map(settlement.Outcome),
-            new Money(coupon.Stake, coupon.Currency), settlement.EffectiveOdds, new Money(settlement.Payout, coupon.Currency), time.GetUtcNow());
-        await transaction.EnqueueAsync(Topics.CouponSettled, couponId.ToString(), settled);
-        await transaction.EnqueueAsync(Topics.CouponSettledV2, couponId.ToString(), new CouponSettledV2(couponId, coupon.PunterId, version, settled.Outcome,
-            settled.Stake, settled.TargetPayout,
+        var settled = new CouponSettledV2(couponId, coupon.PunterId, version, SettlementMapping.Map(settlement.Outcome),
+            new Money(coupon.Stake, coupon.Currency), new Money(settlement.Payout, coupon.Currency),
             [.. settlement.Bets.Select(b => new BetSettlementV2(b.BetId, SettlementMapping.Map(b.Outcome), b.WinningLines, b.VoidLines, b.LosingLines, new Money(b.Return, coupon.Currency)))],
-            settled.SettledAt));
+            time.GetUtcNow());
+        await transaction.EnqueueAsync(Topics.CouponSettledV2, couponId.ToString(), settled);
         await transaction.CommitAsync();
         return settled;
     }

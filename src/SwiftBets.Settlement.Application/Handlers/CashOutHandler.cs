@@ -87,8 +87,6 @@ public sealed class CashOutHandler(ISettlementStore store, IProgressCounter coun
         await transaction.InsertSettlementAsync(request.CouponId, version, settlement);
         var stake = new Money(coupon.Stake, coupon.Currency);
         var payout = new Money(request.Amount, coupon.Currency);
-        await transaction.EnqueueAsync(Topics.CouponSettled, request.CouponId.ToString(),
-            new CouponSettledV1(request.CouponId, coupon.PunterId, version, ContractOutcome.CashedOut, stake, settlement.EffectiveOdds, payout, now));
         await transaction.EnqueueAsync(Topics.CouponSettledV2, request.CouponId.ToString(), new CouponSettledV2(request.CouponId, coupon.PunterId, version, ContractOutcome.CashedOut,
             stake, payout, [.. settlement.Bets.Select(b => new BetSettlementV2(b.BetId, ContractOutcome.CashedOut, 0, 0, 0, payout))], now));
         await transaction.CommitAsync();

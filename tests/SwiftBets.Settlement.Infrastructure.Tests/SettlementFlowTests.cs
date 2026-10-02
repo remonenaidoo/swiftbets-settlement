@@ -221,26 +221,35 @@ public sealed class SettlementFlowTests(SqlServerFixture sql, RedisFixture redis
         (await flow.SettlementsAsync(coupon.CouponId)).ShouldBe([(1, 900L), (2, 1_200L + 600L + 900L + 1_800L)]);
         var latest = (await flow.SettledV2Async())[^1];
         latest.Bets.Single().ShouldBe(new BetSettlementV2(coupon.Bets[0].BetId, CouponOutcome.Won, 4, 0, 0, new Money(4_500, "ZAR")));
-        (await flow.OutboxCountAsync("settlement.coupon-settled")).ShouldBe(4);
+        (await flow.OutboxCountAsync("settlement.coupon-settled")).ShouldBe(2);
     }
 
     [Fact]
-    public async Task A_coupon_published_as_v1_and_v2_is_indexed_once_and_takes_placements_bet_id()
+    public async Task A_coupon_delivered_twice_is_indexed_once_and_keeps_placements_bet_id()
     {
         var flow = await Flow.CreateAsync(sql, redis);
-        var v1 = flow.Acca(("d1", "home", 2.00m), ("d2", "away", 3.00m));
-        var betId = Guid.NewGuid();
-        var v2 = new CouponPlacedV2(v1.CouponId, v1.PunterId, v1.Stake, v1.PotentialPayout,
-            [.. v1.Legs.Select(l => new CouponLegV2(l.LegId, l.FixtureId, l.MarketId, l.SelectionId, l.Odds, l.OfferVersion, false))],
-            [new CouponBetV2(betId, "accumulator", [2], 1, v1.Stake, v1.Stake, v1.PotentialPayout)], v1.PlacedAt);
+        var coupon = flow.Acca(("d1", "home", 2.00m), ("d2", "away", 3.00m));
 
-        await flow.PlaceAsync(v1);
-        await flow.PlaceAsync(v2);
+        await flow.PlaceAsync(coupon);
+        await flow.PlaceAsync(coupon);
         await flow.ResultAsync("d1", 1, ResultStatus.Official, 1, 0);
         await flow.ResultAsync("d2", 1, ResultStatus.Official, 0, 2);
 
-        (await flow.SettlementsAsync(v1.CouponId)).ShouldBe([(1, 6_000L)]);
-        (await flow.SettledV2Async()).Single().Bets.Single().BetId.ShouldBe(betId);
+        (await flow.SettlementsAsync(coupon.CouponId)).ShouldBe([(1, 6_000L)]);
+        (await flow.SettledV2Async()).Single().Bets.Single().BetId.ShouldBe(coupon.Bets[0].BetId);
+    }
+
+    [Fact]
+    public async Task A_settlement_is_published_as_v2_only()
+    {
+        var flow = await Flow.CreateAsync(sql, redis);
+        var coupon = flow.Acca(("o1", "home", 2.00m));
+        await flow.PlaceAsync(coupon);
+
+        await flow.ResultAsync("o1", 1, ResultStatus.Official, 1, 0);
+
+        (await flow.OutboxTopicCountAsync("%.coupon-settled.v2.%")).ShouldBe(1);
+        (await flow.OutboxTopicCountAsync("%.coupon-settled.v1.%")).ShouldBe(0);
     }
 
     [Fact]
@@ -320,14 +329,16 @@ public sealed class SettlementFlowTests(SqlServerFixture sql, RedisFixture redis
             return new Flow(connectionString, store, new RedisProgressCounter(multiplexer), multiplexer);
         }
 
-        public CouponPlacedV1 Acca(params (string Fixture, string Selection, decimal Odds)[] legs) => Acca(DateTimeOffset.UtcNow, legs);
+        public CouponPlacedV2 Acca(params (string Fixture, string Selection, decimal Odds)[] legs) => Acca(DateTimeOffset.UtcNow, legs);
 
-        public CouponPlacedV1 Acca(DateTimeOffset placedAt, params (string Fixture, string Selection, decimal Odds)[] legs)
+        /// <summary>One accumulator bet over every leg at R10, as placement publishes a single or an acca.</summary>
+        public CouponPlacedV2 Acca(DateTimeOffset placedAt, params (string Fixture, string Selection, decimal Odds)[] legs)
         {
-            var id = Guid.NewGuid();
-            var odds = legs.Aggregate(1m, (t, l) => t * l.Odds);
-            return new CouponPlacedV1(id, Guid.NewGuid(), legs.Length == 1 ? BetType.Single : BetType.Accumulator, new Money(1_000, "ZAR"), odds, new Money((long)(1_000 * odds), "ZAR"),
-                [.. legs.Select(l => new CouponLegV1(Guid.NewGuid(), Scoped(l.Fixture), $"{Scoped(l.Fixture)}-m", l.Selection, l.Odds, 1))], placedAt);
+            var stake = new Money(1_000, "ZAR");
+            var payout = new Money((long)(1_000 * legs.Aggregate(1m, (t, l) => t * l.Odds)), "ZAR");
+            return new CouponPlacedV2(Guid.NewGuid(), Guid.NewGuid(), stake, payout,
+                [.. legs.Select(l => new CouponLegV2(Guid.NewGuid(), Scoped(l.Fixture), $"{Scoped(l.Fixture)}-m", l.Selection, l.Odds, 1, false))],
+                [new CouponBetV2(Guid.NewGuid(), legs.Length == 1 ? "single" : "accumulator", [legs.Length], 1, stake, stake, payout)], placedAt);
         }
 
         /// <summary>The first leg is a banker; the rest make a Trixie at R1 a line.</summary>
@@ -347,12 +358,6 @@ public sealed class SettlementFlowTests(SqlServerFixture sql, RedisFixture redis
             await using var connection = new SqlConnection(_connectionString);
             var payloads = await connection.QueryAsync<byte[]>("SELECT Payload FROM outbox.Messages WHERE EventType = 'settlement.coupon-settled' AND Topic LIKE '%.coupon-settled.v2.%' ORDER BY Sequence");
             return [.. payloads.Select(p => EnvelopeSerializer.Deserialize<CouponSettledV2>(p)!.Payload)];
-        }
-
-        public async Task PlaceAsync(CouponPlacedV1 coupon)
-        {
-            await new IndexCouponHandler(_store, TimeProvider.System).HandleAsync(Guid.NewGuid(), coupon);
-            await SettleNewEvaluationsAsync();
         }
 
         public async Task ResultAsync(string fixture, int version, ResultStatus status, int home, int away, bool settle = true)
@@ -377,11 +382,11 @@ public sealed class SettlementFlowTests(SqlServerFixture sql, RedisFixture redis
             new(Guid.NewGuid(), ManualResultScope.Fixture, ManualResultAction.TimeVoid, Scoped(fixture), null, null, null, voidFrom,
                 "late bets after a goal", Guid.NewGuid(), DateTimeOffset.UtcNow);
 
-        public async Task<(bool Accepted, string? RefusalCode, bool WasApplied, Guid CashoutId)> CashOutAsync(CouponPlacedV1 coupon, long amount, Guid? cashoutId = null)
+        public async Task<(bool Accepted, string? RefusalCode, bool WasApplied, Guid CashoutId)> CashOutAsync(CouponPlacedV2 coupon, long amount, Guid? cashoutId = null)
         {
             var id = cashoutId ?? Guid.NewGuid();
             var reply = await new CashOutHandler(_store, _counter, TimeProvider.System)
-                .HandleAsync(new CashOutHandler.Request(id, coupon.CouponId, coupon.PunterId, amount, coupon.Stake.Currency));
+                .HandleAsync(new CashOutHandler.Request(id, coupon.CouponId, coupon.PunterId, amount, coupon.TotalStake.Currency));
             return (reply.Accepted, reply.RefusalCode, reply.WasApplied, id);
         }
 
@@ -407,6 +412,12 @@ public sealed class SettlementFlowTests(SqlServerFixture sql, RedisFixture redis
         {
             await using var connection = new SqlConnection(_connectionString);
             return [.. await connection.QueryAsync<(int, long)>("SELECT Version, Payout FROM settlement.Settlements WHERE CouponId = @couponId ORDER BY Version", new { couponId })];
+        }
+
+        public async Task<int> OutboxTopicCountAsync(string topicPattern)
+        {
+            await using var connection = new SqlConnection(_connectionString);
+            return await connection.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM outbox.Messages WHERE Topic LIKE @TopicPattern", new { TopicPattern = topicPattern });
         }
 
         public async Task<int> OutboxCountAsync(string eventType)

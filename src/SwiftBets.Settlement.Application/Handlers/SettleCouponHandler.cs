@@ -14,7 +14,7 @@ public sealed class SettleCouponHandler(ISettlementStore store, IProgressCounter
     /// <summary>Simulates a lost evaluation: the message is consumed but nothing is recorded, leaving the coupon for the reconciler.</summary>
     public const string FaultDrop = "settlement.settler.drop";
 
-    public async Task<CouponSettledV1?> HandleAsync(LegEvaluatedV1 evaluated)
+    public async Task<CouponSettledV2?> HandleAsync(LegEvaluatedV1 evaluated)
     {
         try
         {
