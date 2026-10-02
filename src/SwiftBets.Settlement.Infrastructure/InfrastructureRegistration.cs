@@ -33,7 +33,6 @@ public static class InfrastructureRegistration
 
         if (configuration.GetValue("Settlement:RunConsumers", true))
         {
-            services.AddKafkaConsumer<CouponPlacedV1, CouponPlacedConsumer>(Topics.CouponPlaced, "swiftbets.settlement.indexer");
             services.AddKafkaConsumer<CouponPlacedV2, CouponPlacedV2Consumer>(Topics.CouponPlacedV2, "swiftbets.settlement.indexer-v2");
             services.AddKafkaConsumer<ResultPublishedV1, ResultPublishedConsumer>(Topics.ResultPublished, "swiftbets.settlement.evaluator");
             services.AddKafkaConsumer<LegEvaluatedV1, LegEvaluatedConsumer>(Topics.LegEvaluated, "swiftbets.settlement.settler");

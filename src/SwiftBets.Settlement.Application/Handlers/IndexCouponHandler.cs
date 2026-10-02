@@ -9,17 +9,7 @@ namespace SwiftBets.Settlement.Application.Handlers;
 /// <summary>Indexes a placed coupon's legs by fixture. A leg whose result already landed is evaluated in the same transaction.</summary>
 public sealed class IndexCouponHandler(ISettlementStore store, TimeProvider time)
 {
-    public const string Consumer = "settlement.indexer";
     public const string ConsumerV2 = "settlement.indexer.v2";
-
-    /// <summary>A V1 coupon is one bet: every leg in one line, the whole stake on it.</summary>
-    public Task HandleAsync(Guid eventId, CouponPlacedV1 placed)
-    {
-        ArgumentNullException.ThrowIfNull(placed);
-        var legs = placed.Legs.Select((l, i) => new IndexedLeg(l.LegId, placed.CouponId, l.FixtureId, l.MarketId, l.SelectionId, l.Odds, false, i)).ToList();
-        return IndexAsync(Consumer, eventId, new IndexedCoupon(placed.CouponId, placed.PunterId, placed.Stake.MinorUnits, placed.Stake.Currency, legs.Count, placed.PlacedAt),
-            legs, [new SettlementBet(Guid.Empty, [legs.Count], placed.Stake.MinorUnits)]);
-    }
 
     public Task HandleAsync(Guid eventId, CouponPlacedV2 placed)
     {
