@@ -59,6 +59,32 @@ public sealed class SettlementFlowTests(SqlServerFixture sql, RedisFixture redis
     }
 
     [Fact]
+    public async Task A_time_void_voids_a_coupon_placed_at_or_after_the_cut_off()
+    {
+        var flow = await Flow.CreateAsync(sql, redis);
+        var cutOff = DateTimeOffset.UtcNow.AddMinutes(-10);
+        var late = flow.Acca(cutOff.AddMinutes(1), ("tv1", "home", 2.00m));
+        await flow.PlaceAsync(late);
+
+        (await flow.ManualAsync(flow.TimeVoid("tv1", cutOff))).ShouldBe(1);
+
+        (await flow.SettlementsAsync(late.CouponId)).ShouldBe([(1, 1_000L)]);
+    }
+
+    [Fact]
+    public async Task A_time_void_leaves_a_coupon_placed_before_the_cut_off_alone()
+    {
+        var flow = await Flow.CreateAsync(sql, redis);
+        var cutOff = DateTimeOffset.UtcNow.AddMinutes(-10);
+        var early = flow.Acca(cutOff.AddMinutes(-1), ("tv2", "home", 2.00m));
+        await flow.PlaceAsync(early);
+
+        (await flow.ManualAsync(flow.TimeVoid("tv2", cutOff))).ShouldBe(0);
+
+        (await flow.SettlementsAsync(early.CouponId)).ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task A_trader_settles_a_market_the_feed_never_resulted()
     {
         var flow = await Flow.CreateAsync(sql, redis);
@@ -184,12 +210,14 @@ public sealed class SettlementFlowTests(SqlServerFixture sql, RedisFixture redis
             return new Flow(connectionString, store, new RedisProgressCounter(multiplexer), multiplexer);
         }
 
-        public CouponPlacedV1 Acca(params (string Fixture, string Selection, decimal Odds)[] legs)
+        public CouponPlacedV1 Acca(params (string Fixture, string Selection, decimal Odds)[] legs) => Acca(DateTimeOffset.UtcNow, legs);
+
+        public CouponPlacedV1 Acca(DateTimeOffset placedAt, params (string Fixture, string Selection, decimal Odds)[] legs)
         {
             var id = Guid.NewGuid();
             var odds = legs.Aggregate(1m, (t, l) => t * l.Odds);
             return new CouponPlacedV1(id, Guid.NewGuid(), legs.Length == 1 ? BetType.Single : BetType.Accumulator, new Money(1_000, "ZAR"), odds, new Money((long)(1_000 * odds), "ZAR"),
-                [.. legs.Select(l => new CouponLegV1(Guid.NewGuid(), Scoped(l.Fixture), $"{Scoped(l.Fixture)}-m", l.Selection, l.Odds, 1))], DateTimeOffset.UtcNow);
+                [.. legs.Select(l => new CouponLegV1(Guid.NewGuid(), Scoped(l.Fixture), $"{Scoped(l.Fixture)}-m", l.Selection, l.Odds, 1))], placedAt);
         }
 
         /// <summary>The first leg is a banker; the rest make a Trixie at R1 a line.</summary>
@@ -234,6 +262,10 @@ public sealed class SettlementFlowTests(SqlServerFixture sql, RedisFixture redis
         public ManualResultV1 Manual(ManualResultScope scope, ManualResultAction action, string fixture, string? winner = null) =>
             new(Guid.NewGuid(), scope, action, Scoped(fixture), scope == ManualResultScope.Market ? $"{Scoped(fixture)}-m" : null, null, winner, null,
                 "trader decision", Guid.NewGuid(), DateTimeOffset.UtcNow);
+
+        public ManualResultV1 TimeVoid(string fixture, DateTimeOffset voidFrom) =>
+            new(Guid.NewGuid(), ManualResultScope.Fixture, ManualResultAction.TimeVoid, Scoped(fixture), null, null, null, voidFrom,
+                "late bets after a goal", Guid.NewGuid(), DateTimeOffset.UtcNow);
 
         public async Task<int> ManualAsync(ManualResultV1 manual)
         {

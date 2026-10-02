@@ -17,7 +17,7 @@ public sealed class IndexCouponHandler(ISettlementStore store, TimeProvider time
     {
         ArgumentNullException.ThrowIfNull(placed);
         var legs = placed.Legs.Select((l, i) => new IndexedLeg(l.LegId, placed.CouponId, l.FixtureId, l.MarketId, l.SelectionId, l.Odds, false, i)).ToList();
-        return IndexAsync(Consumer, eventId, new IndexedCoupon(placed.CouponId, placed.PunterId, placed.Stake.MinorUnits, placed.Stake.Currency, legs.Count),
+        return IndexAsync(Consumer, eventId, new IndexedCoupon(placed.CouponId, placed.PunterId, placed.Stake.MinorUnits, placed.Stake.Currency, legs.Count, placed.PlacedAt),
             legs, [new SettlementBet(Guid.Empty, [legs.Count], placed.Stake.MinorUnits)]);
     }
 
@@ -25,7 +25,7 @@ public sealed class IndexCouponHandler(ISettlementStore store, TimeProvider time
     {
         ArgumentNullException.ThrowIfNull(placed);
         var legs = placed.Legs.Select((l, i) => new IndexedLeg(l.LegId, placed.CouponId, l.FixtureId, l.MarketId, l.SelectionId, l.Odds, l.IsBanker, i)).ToList();
-        return IndexAsync(ConsumerV2, eventId, new IndexedCoupon(placed.CouponId, placed.PunterId, placed.TotalStake.MinorUnits, placed.TotalStake.Currency, legs.Count),
+        return IndexAsync(ConsumerV2, eventId, new IndexedCoupon(placed.CouponId, placed.PunterId, placed.TotalStake.MinorUnits, placed.TotalStake.Currency, legs.Count, placed.PlacedAt),
             legs, [.. placed.Bets.Select(b => new SettlementBet(b.BetId, b.Folds, b.UnitStake.MinorUnits))]);
     }
 

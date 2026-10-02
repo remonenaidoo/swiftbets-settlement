@@ -9,6 +9,9 @@ public interface ISettlementTransaction : IAsyncDisposable
     Task<bool> TryRecordInboxAsync(string consumer, Guid eventId);
 
     /// <summary>Indexes a coupon with its legs and bets; false when it is already indexed (it was published as V1 and V2).</summary>
+    /// <summary>Legs on a fixture with their coupon's placement time, for time-voids.</summary>
+    Task<IReadOnlyList<TimedLeg>> GetTimedLegsForFixtureAsync(string fixtureId);
+
     Task<bool> TryInsertCouponAsync(IndexedCoupon coupon, IReadOnlyList<IndexedLeg> legs, IReadOnlyList<SettlementBet> bets);
 
     Task<IReadOnlyList<SettlementBet>> GetBetsAsync(Guid couponId);

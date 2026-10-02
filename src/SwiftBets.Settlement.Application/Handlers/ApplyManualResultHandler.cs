@@ -23,9 +23,9 @@ public sealed partial class ApplyManualResultHandler(ISettlementStore store, Tim
     public async Task<int> HandleAsync(ManualResultV1 manual)
     {
         ArgumentNullException.ThrowIfNull(manual);
-        if (manual.Action == ManualResultAction.TimeVoid)
+        if (manual.Action == ManualResultAction.TimeVoid && manual.VoidFrom is null)
         {
-            LogTimeVoidUnsupported(logger, manual.ManualResultId);
+            LogTimeVoidWithoutCutOff(logger, manual.ManualResultId);
             return 0;
         }
 
@@ -37,9 +37,9 @@ public sealed partial class ApplyManualResultHandler(ISettlementStore store, Tim
             return 0;
         }
 
-        foreach (var leg in (await transaction.GetLegsForFixtureAsync(manual.FixtureId)).Where(l => InScope(manual, l)))
+        foreach (var leg in await LegsToEvaluateAsync(transaction, manual))
         {
-            var outcome = manual.Action == ManualResultAction.Void ? LegOutcome.Void
+            var outcome = manual.Action is ManualResultAction.Void or ManualResultAction.TimeVoid ? LegOutcome.Void
                 : leg.SelectionId == manual.WinningSelectionId ? LegOutcome.Won : LegOutcome.Lost;
             if (await transaction.TryInsertEvaluationAsync(leg, version, outcome))
             {
@@ -53,6 +53,27 @@ public sealed partial class ApplyManualResultHandler(ISettlementStore store, Tim
         return evaluated;
     }
 
+    /// <summary>
+    /// A time-void touches only coupons placed at or after the cut-off. A coupon with no stored placement time (indexed
+    /// before settlement 0004) is never voided on a guess; it is counted and logged for a trader to handle by coupon.
+    /// </summary>
+    private async Task<IReadOnlyList<IndexedLeg>> LegsToEvaluateAsync(ISettlementTransaction transaction, ManualResultV1 manual)
+    {
+        if (manual.Action != ManualResultAction.TimeVoid)
+        {
+            return [.. (await transaction.GetLegsForFixtureAsync(manual.FixtureId)).Where(l => InScope(manual, l))];
+        }
+
+        var inScope = (await transaction.GetTimedLegsForFixtureAsync(manual.FixtureId)).Where(t => InScope(manual, t.Leg)).ToList();
+        var unknown = inScope.Count(t => t.PlacedAt is null);
+        if (unknown > 0)
+        {
+            LogPlacementTimeUnknown(logger, manual.ManualResultId, unknown);
+        }
+
+        return [.. inScope.Where(t => t.PlacedAt >= manual.VoidFrom).Select(t => t.Leg)];
+    }
+
     private static bool InScope(ManualResultV1 manual, IndexedLeg leg) => manual.Scope switch
     {
         ManualResultScope.Fixture => true,
@@ -61,6 +82,9 @@ public sealed partial class ApplyManualResultHandler(ISettlementStore store, Tim
         _ => false,
     };
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Manual result {ManualResultId} is a time-void, which needs placement times (settlement 0004); skipped.")]
-    private static partial void LogTimeVoidUnsupported(ILogger logger, Guid manualResultId);
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Manual result {ManualResultId} is a time-void without a VoidFrom cut-off; skipped.")]
+    private static partial void LogTimeVoidWithoutCutOff(ILogger logger, Guid manualResultId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Time-void {ManualResultId} left {Legs} legs alone: their coupons were indexed before placement times were stored.")]
+    private static partial void LogPlacementTimeUnknown(ILogger logger, Guid manualResultId, int legs);
 }
