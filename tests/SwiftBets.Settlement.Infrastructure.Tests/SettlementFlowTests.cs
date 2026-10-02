@@ -41,6 +41,28 @@ public sealed class SettlementFlowTests(SqlServerFixture sql, RedisFixture redis
     }
 
     [Fact]
+    public async Task Integrity_digest_returns_only_the_latest_settlement_of_a_resettled_coupon()
+    {
+        var flow = await Flow.CreateAsync(sql, redis);
+        var coupon = flow.Acca(("d1", "home", 2.00m));
+        await flow.PlaceAsync(coupon);
+        await flow.ResultAsync("d1", 1, ResultStatus.Official, 2, 0);
+        await flow.ResultAsync("d1", 2, ResultStatus.Correction, 0, 2);
+
+        var digest = (await flow.Store.GetSettlementDigestAsync([coupon.CouponId], CancellationToken.None)).ShouldHaveSingleItem();
+
+        (digest.Version, digest.Outcome, digest.Payout).ShouldBe((2, Domain.CouponOutcome.Lost, 0L));
+    }
+
+    [Fact]
+    public async Task Integrity_digest_leaves_out_a_coupon_never_settled()
+    {
+        var flow = await Flow.CreateAsync(sql, redis);
+
+        (await flow.Store.GetSettlementDigestAsync([Guid.NewGuid()], CancellationToken.None)).ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task A_trader_voids_a_market_after_the_feed_settled_it_and_a_later_feed_correction_cannot_undo_it()
     {
         var flow = await Flow.CreateAsync(sql, redis);
@@ -257,6 +279,8 @@ public sealed class SettlementFlowTests(SqlServerFixture sql, RedisFixture redis
         }
 
         public CouponSettler Settler { get; }
+
+        public SqlSettlementStore Store => _store;
 
         public ReconcileHandler Reconciler { get; }
 

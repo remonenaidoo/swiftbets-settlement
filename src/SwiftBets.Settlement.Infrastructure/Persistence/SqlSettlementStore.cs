@@ -31,6 +31,14 @@ public sealed class SqlSettlementStore(ISqlConnectionFactory connections, IOutbo
         return [.. rows.Select(r => (new IndexedLeg(r.LegId, r.CouponId, r.FixtureId, r.MarketId, r.SelectionId, r.Odds), new FixtureResult(r.ResultFixtureId, r.ResultVersion, (ResultState)r.State, r.HomeGoals, r.AwayGoals)))];
     }
 
+    public async Task<IReadOnlyList<Application.Integrity.SettlementDigest>> GetSettlementDigestAsync(IReadOnlyList<Guid> couponIds, CancellationToken cancellationToken)
+    {
+        await using var connection = await connections.OpenAsync(cancellationToken);
+        var rows = await connection.QueryAsync<(Guid CouponId, int Version, byte Outcome, long Payout, DateTimeOffset SettledAt)>(
+            new CommandDefinition(Sql.Get("Settle.IntegrityDigest"), new { Ids = couponIds }, cancellationToken: cancellationToken));
+        return [.. rows.Select(r => new Application.Integrity.SettlementDigest(r.CouponId, r.Version, (Domain.CouponOutcome)r.Outcome, r.Payout, r.SettledAt))];
+    }
+
     public async Task<CouponStateView?> GetCouponStateAsync(Guid couponId, CancellationToken cancellationToken)
     {
         await using var connection = await connections.OpenAsync(cancellationToken);
