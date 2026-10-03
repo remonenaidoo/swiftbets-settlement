@@ -1,6 +1,6 @@
 SELECT TOP (@Limit)
        l.LegId, l.CouponId, l.FixtureId, l.MarketId, l.SelectionId, l.Odds,
-       r.FixtureId AS ResultFixtureId, r.ResultVersion, r.State, r.HomeGoals, r.AwayGoals
+       r.FixtureId AS ResultFixtureId, r.ResultVersion, r.State, r.HomeGoals, r.AwayGoals, r.HomeGames, r.AwayGames, r.Winners
 FROM settlement.Results r
 JOIN settlement.Legs l ON l.FixtureId = r.FixtureId
 WHERE r.PublishedAt > @Since

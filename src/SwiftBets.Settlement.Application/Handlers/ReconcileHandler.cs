@@ -17,7 +17,7 @@ public sealed class ReconcileHandler(ISettlementStore store, IProgressCounter co
         foreach (var (leg, result) in await store.FindUnevaluatedLegsAsync(200, cancellationToken))
         {
             await using var transaction = await store.BeginAsync();
-            var outcome = LegRules.Evaluate(leg.SelectionId, result);
+            var outcome = LegRules.Evaluate(leg.MarketId, leg.SelectionId, result);
             if (await transaction.TryInsertEvaluationAsync(leg, result.Version, outcome))
             {
                 await transaction.EnqueueAsync(Topics.LegEvaluated, leg.CouponId.ToString(),

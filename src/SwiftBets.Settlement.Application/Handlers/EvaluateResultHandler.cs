@@ -18,7 +18,8 @@ public sealed class EvaluateResultHandler(ISettlementStore store, IFaultPoint fa
 
     public async Task<int> HandleAsync(Guid eventId, ResultPublishedV1 published)
     {
-        var result = new FixtureResult(published.FixtureId, published.ResultVersion, SettlementMapping.State(published.Status), published.HomeGoals, published.AwayGoals);
+        var result = new FixtureResult(published.FixtureId, published.ResultVersion, SettlementMapping.State(published.Status), published.HomeGoals, published.AwayGoals,
+            published.Detail?.HomeGames, published.Detail?.AwayGames, published.Detail?.Winners);
         var evaluated = 0;
         await using (var transaction = await store.BeginAsync())
         {
@@ -38,7 +39,7 @@ public sealed class EvaluateResultHandler(ISettlementStore store, IFaultPoint fa
             {
                 foreach (var leg in await transaction.GetLegsForFixtureAsync(result.FixtureId))
                 {
-                    var outcome = LegRules.Evaluate(leg.SelectionId, result);
+                    var outcome = LegRules.Evaluate(leg.MarketId, leg.SelectionId, result);
                     if (await transaction.TryInsertEvaluationAsync(leg, result.Version, outcome))
                     {
                         await transaction.EnqueueAsync(Topics.LegEvaluated, leg.CouponId.ToString(),
