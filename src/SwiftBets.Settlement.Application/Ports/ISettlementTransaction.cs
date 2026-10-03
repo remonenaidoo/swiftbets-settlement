@@ -45,7 +45,8 @@ public interface ISettlementTransaction : IAsyncDisposable
 
     Task<IReadOnlyList<IndexedLeg>> GetLegsForFixtureAsync(string fixtureId);
 
-    Task<bool> TryInsertEvaluationAsync(IndexedLeg leg, int resultVersion, LegOutcome outcome);
+    /// <summary>Odds, when set, replace the leg's placed odds at settlement (a repriced bet builder).</summary>
+    Task<bool> TryInsertEvaluationAsync(IndexedLeg leg, int resultVersion, LegOutcome outcome, decimal? odds = null);
 
     Task<IndexedCoupon?> LockCouponAsync(Guid couponId);
 

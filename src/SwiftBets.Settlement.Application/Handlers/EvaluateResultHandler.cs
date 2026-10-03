@@ -38,8 +38,8 @@ public sealed class EvaluateResultHandler(ISettlementStore store, IFaultPoint fa
             {
                 foreach (var leg in await transaction.GetLegsForFixtureAsync(result.FixtureId))
                 {
-                    var outcome = LegRules.Evaluate(leg.SelectionId, result);
-                    if (await transaction.TryInsertEvaluationAsync(leg, result.Version, outcome))
+                    var verdict = BuilderRules.Evaluate(leg.SelectionId, leg.BuilderLeg, result);
+                    if (verdict.Outcome is { } outcome && await transaction.TryInsertEvaluationAsync(leg, result.Version, outcome, verdict.Odds))
                     {
                         await transaction.EnqueueAsync(Topics.LegEvaluated, leg.CouponId.ToString(),
                             new LegEvaluatedV1(leg.CouponId, leg.LegId, leg.FixtureId, result.Version, SettlementMapping.Map(outcome), time.GetUtcNow()));

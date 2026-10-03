@@ -40,6 +40,7 @@ public sealed partial class ApplyManualResultHandler(ISettlementStore store, Tim
         var stored = ManualResultRules.From(manual, version);
         await transaction.SaveManualResultAsync(stored);
         var touched = await LegsTouchedAsync(transaction, manual, stored);
+        var feed = await transaction.LockResultAsync(manual.FixtureId);
         foreach (var couponId in touched.Where(t => t.FinalState is not null).Select(t => t.Leg.CouponId).Distinct())
         {
             await transaction.EnqueueAsync(Topics.ManualResultRejected, couponId.ToString(), new ManualResultRejectedV1(manual.ManualResultId, couponId,
@@ -48,8 +49,8 @@ public sealed partial class ApplyManualResultHandler(ISettlementStore store, Tim
 
         foreach (var leg in touched.Where(t => t.FinalState is null).Select(t => t.Leg))
         {
-            var outcome = ManualResultRules.Outcome(stored, leg);
-            if (await transaction.TryInsertEvaluationAsync(leg, version, outcome))
+            var verdict = ManualResultRules.Verdict(stored, leg, feed);
+            if (verdict.Outcome is { } outcome && await transaction.TryInsertEvaluationAsync(leg, version, outcome, verdict.Odds))
             {
                 await transaction.EnqueueAsync(Topics.LegEvaluated, leg.CouponId.ToString(),
                     new LegEvaluatedV1(leg.CouponId, leg.LegId, leg.FixtureId, version, SettlementMapping.Map(outcome), time.GetUtcNow()));

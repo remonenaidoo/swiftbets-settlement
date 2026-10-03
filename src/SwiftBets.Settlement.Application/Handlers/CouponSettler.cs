@@ -42,7 +42,8 @@ public sealed class CouponSettler(ISettlementStore store, TimeProvider time)
         await transaction.InsertSettlementAsync(couponId, version, settlement);
         var settled = new CouponSettledV2(couponId, coupon.PunterId, version, SettlementMapping.Map(settlement.Outcome),
             new Money(coupon.Stake, coupon.Currency), new Money(settlement.Payout, coupon.Currency),
-            [.. settlement.Bets.Select(b => new BetSettlementV2(b.BetId, SettlementMapping.Map(b.Outcome), b.WinningLines, b.VoidLines, b.LosingLines, new Money(b.Return, coupon.Currency)))],
+            [.. settlement.Bets.Select(b => new BetSettlementV2(b.BetId, SettlementMapping.Map(b.Outcome), b.WinningLines, b.VoidLines, b.LosingLines, new Money(b.Return, coupon.Currency),
+                b.BoostBonus > 0 ? new Money(b.BoostBonus, coupon.Currency) : null))],
             time.GetUtcNow());
         await transaction.EnqueueAsync(Topics.CouponSettledV2, couponId.ToString(), settled);
         await transaction.CommitAsync();

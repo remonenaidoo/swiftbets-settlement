@@ -14,9 +14,9 @@ public sealed class IndexCouponHandler(ISettlementStore store, TimeProvider time
     public Task HandleAsync(Guid eventId, CouponPlacedV2 placed)
     {
         ArgumentNullException.ThrowIfNull(placed);
-        var legs = placed.Legs.Select((l, i) => new IndexedLeg(l.LegId, placed.CouponId, l.FixtureId, l.MarketId, l.SelectionId, l.Odds, l.IsBanker, i)).ToList();
+        var legs = placed.Legs.Select((l, i) => new IndexedLeg(l.LegId, placed.CouponId, l.FixtureId, l.MarketId, l.SelectionId, l.Odds, l.IsBanker, i, IndexedLeg.Serialize(l.Builder))).ToList();
         return IndexAsync(ConsumerV2, eventId, new IndexedCoupon(placed.CouponId, placed.PunterId, placed.TotalStake.MinorUnits, placed.TotalStake.Currency, legs.Count, placed.PlacedAt),
-            legs, [.. placed.Bets.Select(b => new SettlementBet(b.BetId, b.Folds, b.UnitStake.MinorUnits))]);
+            legs, [.. placed.Bets.Select(b => new SettlementBet(b.BetId, b.Folds, b.UnitStake.MinorUnits, b.AccaBoostPercent))]);
     }
 
     private async Task IndexAsync(string consumer, Guid eventId, IndexedCoupon coupon, List<IndexedLeg> legs, IReadOnlyList<SettlementBet> bets)
@@ -43,7 +43,7 @@ public sealed class IndexCouponHandler(ISettlementStore store, TimeProvider time
         {
             if (results.TryGetValue(leg.FixtureId, out var result) && result.IsSettleable)
             {
-                await EvaluateAsync(transaction, leg, result.Version, LegRules.Evaluate(leg.SelectionId, result));
+                await EvaluateAsync(transaction, leg, result.Version, BuilderRules.Evaluate(leg.SelectionId, leg.BuilderLeg, result));
             }
         }
 
@@ -53,16 +53,16 @@ public sealed class IndexCouponHandler(ISettlementStore store, TimeProvider time
         {
             foreach (var leg in legs.Where(l => ManualResultRules.InScope(manual, l)))
             {
-                await EvaluateAsync(transaction, leg, manual.Version, ManualResultRules.Outcome(manual, leg));
+                await EvaluateAsync(transaction, leg, manual.Version, ManualResultRules.Verdict(manual, leg, results.GetValueOrDefault(leg.FixtureId)));
             }
         }
 
         await transaction.CommitAsync();
     }
 
-    private async Task EvaluateAsync(ISettlementTransaction transaction, IndexedLeg leg, int version, Domain.LegOutcome outcome)
+    private async Task EvaluateAsync(ISettlementTransaction transaction, IndexedLeg leg, int version, LegVerdict verdict)
     {
-        if (await transaction.TryInsertEvaluationAsync(leg, version, outcome))
+        if (verdict.Outcome is { } outcome && await transaction.TryInsertEvaluationAsync(leg, version, outcome, verdict.Odds))
         {
             await transaction.EnqueueAsync(Topics.LegEvaluated, leg.CouponId.ToString(),
                 new LegEvaluatedV1(leg.CouponId, leg.LegId, leg.FixtureId, version, SettlementMapping.Map(outcome), time.GetUtcNow()));

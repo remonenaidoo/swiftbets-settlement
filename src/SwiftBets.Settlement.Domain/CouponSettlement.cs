@@ -3,9 +3,11 @@ using SwiftBets.Contracts.Placement;
 namespace SwiftBets.Settlement.Domain;
 
 /// <summary>A bet as placed: fold sizes over the coupon's non-banker legs, and the stake on each line.</summary>
-public sealed record SettlementBet(Guid BetId, IReadOnlyList<int> Folds, long UnitStake);
+/// <summary>A bet as placed; an accumulator boost adds its percentage of the winnings when the bet wins.</summary>
+public sealed record SettlementBet(Guid BetId, IReadOnlyList<int> Folds, long UnitStake, decimal AccaBoostPercent = 0m);
 
-public sealed record SettledBet(Guid BetId, CouponOutcome Outcome, int WinningLines, int VoidLines, int LosingLines, long Return);
+/// <summary><see cref="Return"/> includes <see cref="BoostBonus"/>.</summary>
+public sealed record SettledBet(Guid BetId, CouponOutcome Outcome, int WinningLines, int VoidLines, int LosingLines, long Return, long BoostBonus = 0);
 
 /// <summary>
 /// Settles every line of every bet the way placement priced it (<see cref="SystemBets"/>): a lost leg loses the line,
@@ -71,6 +73,7 @@ public sealed record CouponSettlement(CouponOutcome Outcome, decimal EffectiveOd
         }
 
         var outcome = lost == 0 && won == 0 ? CouponOutcome.Void : returned == 0 ? CouponOutcome.Lost : CouponOutcome.Won;
-        return new SettledBet(bet.BetId, outcome, won, voided, lost, returned);
+        var bonus = outcome == CouponOutcome.Won ? Contracts.Promotions.AccaBoost.Bonus(bet.UnitStake * (won + voided + lost), returned, bet.AccaBoostPercent) : 0;
+        return new SettledBet(bet.BetId, outcome, won, voided, lost, returned + bonus, bonus);
     }
 }
