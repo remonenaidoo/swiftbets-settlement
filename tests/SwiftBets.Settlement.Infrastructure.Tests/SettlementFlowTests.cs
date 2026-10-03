@@ -205,6 +205,31 @@ public sealed class SettlementFlowTests(SqlServerFixture sql, RedisFixture redis
     }
 
     [Fact]
+    public async Task A_tennis_total_games_and_a_cricket_top_batter_settle_from_the_result_detail()
+    {
+        var flow = await Flow.CreateAsync(sql, redis);
+        var coupon = Flow.On(flow.Acca(("t1", "over:22.5", 1.90m), ("c1", "player-jos-buttler", 4.00m)), "games", "topbat");
+        await flow.PlaceAsync(coupon);
+
+        await flow.ResultAsync("t1", 1, ResultStatus.Official, 2, 1, detail: new ResultDetailV1(13, 11));
+        await flow.ResultAsync("c1", 1, ResultStatus.Official, 170, 150, detail: new ResultDetailV1(Winners: ["player-jos-buttler"]));
+
+        (await flow.SettlementsAsync(coupon.CouponId)).ShouldBe([(1, 7_600L)]);
+    }
+
+    [Fact]
+    public async Task A_rugby_handicap_on_a_whole_line_that_lands_on_it_is_void_and_returns_the_stake()
+    {
+        var flow = await Flow.CreateAsync(sql, redis);
+        var coupon = Flow.On(flow.Acca(("r1", "home:-7.0", 1.90m)), "hcp");
+        await flow.PlaceAsync(coupon);
+
+        await flow.ResultAsync("r1", 1, ResultStatus.Official, 27, 20);
+
+        (await flow.SettlementsAsync(coupon.CouponId)).ShouldBe([(1, 1_000L)]);
+    }
+
+    [Fact]
     public async Task A_banker_trixie_settles_from_out_of_order_results_and_resettles_on_a_correction()
     {
         var flow = await Flow.CreateAsync(sql, redis);
@@ -360,10 +385,14 @@ public sealed class SettlementFlowTests(SqlServerFixture sql, RedisFixture redis
             return [.. payloads.Select(p => EnvelopeSerializer.Deserialize<CouponSettledV2>(p)!.Payload)];
         }
 
-        public async Task ResultAsync(string fixture, int version, ResultStatus status, int home, int away, bool settle = true)
+        /// <summary>The coupon with each leg on a market of the given type suffix, in leg order.</summary>
+        public static CouponPlacedV2 On(CouponPlacedV2 coupon, params string[] suffixes) =>
+            coupon with { Legs = [.. coupon.Legs.Select((l, i) => l with { MarketId = $"{l.FixtureId}-{suffixes[i]}" })] };
+
+        public async Task ResultAsync(string fixture, int version, ResultStatus status, int home, int away, bool settle = true, ResultDetailV1? detail = null)
         {
             await new EvaluateResultHandler(_store, new NoFaults(), TimeProvider.System)
-                .HandleAsync(Guid.NewGuid(), new ResultPublishedV1(Scoped(fixture), version, status, home, away, DateTimeOffset.UtcNow));
+                .HandleAsync(Guid.NewGuid(), new ResultPublishedV1(Scoped(fixture), version, status, home, away, DateTimeOffset.UtcNow, detail));
             if (settle)
             {
                 await SettleNewEvaluationsAsync();

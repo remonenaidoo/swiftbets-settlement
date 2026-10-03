@@ -26,9 +26,9 @@ public sealed class SqlSettlementStore(ISqlConnectionFactory connections, IOutbo
     public async Task<IReadOnlyList<(IndexedLeg Leg, FixtureResult Result)>> FindUnevaluatedLegsAsync(int limit, CancellationToken cancellationToken)
     {
         await using var connection = await connections.OpenAsync(cancellationToken);
-        var rows = await connection.QueryAsync<(Guid LegId, Guid CouponId, string FixtureId, string MarketId, string SelectionId, decimal Odds, string ResultFixtureId, int ResultVersion, byte State, int HomeGoals, int AwayGoals)>(
+        var rows = await connection.QueryAsync<(Guid LegId, Guid CouponId, string FixtureId, string MarketId, string SelectionId, decimal Odds, string ResultFixtureId, int ResultVersion, byte State, int HomeGoals, int AwayGoals, int? HomeGames, int? AwayGames, string? Winners)>(
             new CommandDefinition(Sql.Get("Settle.FindUnevaluated"), new { Limit = limit, Since = time.GetUtcNow().AddHours(-1) }, cancellationToken: cancellationToken));
-        return [.. rows.Select(r => (new IndexedLeg(r.LegId, r.CouponId, r.FixtureId, r.MarketId, r.SelectionId, r.Odds), new FixtureResult(r.ResultFixtureId, r.ResultVersion, (ResultState)r.State, r.HomeGoals, r.AwayGoals)))];
+        return [.. rows.Select(r => (new IndexedLeg(r.LegId, r.CouponId, r.FixtureId, r.MarketId, r.SelectionId, r.Odds), new FixtureResult(r.ResultFixtureId, r.ResultVersion, (ResultState)r.State, r.HomeGoals, r.AwayGoals, r.HomeGames, r.AwayGames, FixtureResult.ParseWinners(r.Winners))))];
     }
 
     public async Task<IReadOnlyList<Application.Integrity.SettlementDigest>> GetSettlementDigestAsync(IReadOnlyList<Guid> couponIds, CancellationToken cancellationToken)

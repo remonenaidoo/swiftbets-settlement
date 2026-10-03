@@ -58,7 +58,7 @@ internal sealed class SqlSettlementTransaction(SqlConnection connection, SqlTran
         (await connection.QuerySingleOrDefaultAsync<ResultRow>(Sql.Get("Settle.LockResult"), new { FixtureId = fixtureId }, transaction))?.ToDomain();
 
     public Task SaveResultAsync(FixtureResult result) =>
-        connection.ExecuteAsync(Sql.Get("Settle.SaveResult"), new { result.FixtureId, result.Version, State = (byte)result.State, result.HomeGoals, result.AwayGoals, Now = time.GetUtcNow() }, transaction);
+        connection.ExecuteAsync(Sql.Get("Settle.SaveResult"), new { result.FixtureId, result.Version, State = (byte)result.State, result.HomeGoals, result.AwayGoals, result.HomeGames, result.AwayGames, Winners = result.WinnersText, Now = time.GetUtcNow() }, transaction);
 
     public async Task<IReadOnlyList<IndexedLeg>> GetLegsForFixtureAsync(string fixtureId) =>
         [.. await connection.QueryAsync<IndexedLeg>(Sql.Get("Settle.LegsForFixture"), new { FixtureId = fixtureId }, transaction)];
@@ -119,8 +119,8 @@ internal sealed class SqlSettlementTransaction(SqlConnection connection, SqlTran
         await connection.DisposeAsync();
     }
 
-    internal sealed record ResultRow(string FixtureId, int Version, byte State, int HomeGoals, int AwayGoals)
+    internal sealed record ResultRow(string FixtureId, int Version, byte State, int HomeGoals, int AwayGoals, int? HomeGames, int? AwayGames, string? Winners)
     {
-        public FixtureResult ToDomain() => new(FixtureId, Version, (ResultState)State, HomeGoals, AwayGoals);
+        public FixtureResult ToDomain() => new(FixtureId, Version, (ResultState)State, HomeGoals, AwayGoals, HomeGames, AwayGames, FixtureResult.ParseWinners(Winners));
     }
 }
