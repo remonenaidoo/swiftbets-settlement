@@ -1,7 +1,7 @@
-SELECT e.LegId, e.ResultVersion, e.Outcome, l.Odds, l.IsBanker, l.Position
+SELECT e.LegId, e.ResultVersion, e.Outcome, COALESCE(e.Odds, l.Odds) AS Odds, l.IsBanker, l.Position
 FROM
 (
-    SELECT LegId, ResultVersion, Outcome, ROW_NUMBER() OVER (PARTITION BY LegId ORDER BY ResultVersion DESC) AS Recency
+    SELECT LegId, ResultVersion, Outcome, Odds, ROW_NUMBER() OVER (PARTITION BY LegId ORDER BY ResultVersion DESC) AS Recency
     FROM settlement.LegEvaluations
     WHERE CouponId = @CouponId
 ) e

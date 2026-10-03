@@ -25,7 +25,7 @@ internal sealed class SqlSettlementTransaction(SqlConnection connection, SqlTran
         await connection.ExecuteAsync(Sql.Get("Settle.InsertLeg"), legs, transaction);
         await connection.ExecuteAsync(Sql.Get("Settle.InsertBet"), bets.Select(b => new
         {
-            BetId = b.BetId == Guid.Empty ? Guid.CreateVersion7() : b.BetId, coupon.CouponId, Folds = string.Join(',', b.Folds), b.UnitStake,
+            BetId = b.BetId == Guid.Empty ? Guid.CreateVersion7() : b.BetId, coupon.CouponId, Folds = string.Join(',', b.Folds), b.UnitStake, b.AccaBoostPercent,
         }), transaction);
         return true;
     }
@@ -34,8 +34,8 @@ internal sealed class SqlSettlementTransaction(SqlConnection connection, SqlTran
         connection.ExecuteAsync(Sql.Get("Settle.AdoptBetId"), new { CouponId = couponId, bet.BetId, Folds = string.Join(',', bet.Folds), bet.UnitStake }, transaction);
 
     public async Task<IReadOnlyList<SettlementBet>> GetBetsAsync(Guid couponId) =>
-        [.. (await connection.QueryAsync<(Guid BetId, string Folds, long UnitStake)>(Sql.Get("Settle.BetsForCoupon"), new { CouponId = couponId }, transaction))
-            .Select(b => new SettlementBet(b.BetId, [.. b.Folds.Split(',').Select(f => int.Parse(f, System.Globalization.CultureInfo.InvariantCulture))], b.UnitStake))];
+        [.. (await connection.QueryAsync<(Guid BetId, string Folds, long UnitStake, decimal AccaBoostPercent)>(Sql.Get("Settle.BetsForCoupon"), new { CouponId = couponId }, transaction))
+            .Select(b => new SettlementBet(b.BetId, [.. b.Folds.Split(',').Select(f => int.Parse(f, System.Globalization.CultureInfo.InvariantCulture))], b.UnitStake, b.AccaBoostPercent))];
 
     public async Task<IReadOnlyDictionary<string, FixtureResult>> LockResultsAsync(IReadOnlyList<string> fixtureIds) =>
         (await connection.QueryAsync<ResultRow>(Sql.Get("Settle.LockResults"), new { FixtureIds = fixtureIds }, transaction))
@@ -64,9 +64,9 @@ internal sealed class SqlSettlementTransaction(SqlConnection connection, SqlTran
         [.. await connection.QueryAsync<IndexedLeg>(Sql.Get("Settle.LegsForFixture"), new { FixtureId = fixtureId }, transaction)];
 
     public async Task<IReadOnlyList<TimedLeg>> GetTimedLegsForFixtureAsync(string fixtureId) =>
-        [.. (await connection.QueryAsync<(Guid LegId, Guid CouponId, string FixtureId, string MarketId, string SelectionId, decimal Odds, bool IsBanker, int Position, DateTimeOffset? PlacedAt, byte? FinalState)>(
+        [.. (await connection.QueryAsync<(Guid LegId, Guid CouponId, string FixtureId, string MarketId, string SelectionId, decimal Odds, bool IsBanker, int Position, DateTimeOffset? PlacedAt, byte? FinalState, string? Builder)>(
             Sql.Get("Settle.TimedLegsForFixture"), new { FixtureId = fixtureId }, transaction))
-            .Select(r => new TimedLeg(new IndexedLeg(r.LegId, r.CouponId, r.FixtureId, r.MarketId, r.SelectionId, r.Odds, r.IsBanker, r.Position), r.PlacedAt, (FinalState?)r.FinalState))];
+            .Select(r => new TimedLeg(new IndexedLeg(r.LegId, r.CouponId, r.FixtureId, r.MarketId, r.SelectionId, r.Odds, r.IsBanker, r.Position, r.Builder), r.PlacedAt, (FinalState?)r.FinalState))];
 
     public async Task<FinalState?> GetFinalStateAsync(Guid couponId) =>
         (FinalState?)await connection.ExecuteScalarAsync<byte?>(Sql.Get("Settle.FinalState"), new { CouponId = couponId }, transaction);
@@ -85,9 +85,9 @@ internal sealed class SqlSettlementTransaction(SqlConnection connection, SqlTran
             Sql.Get("Settle.CouponLegs"), new { CouponId = couponId }, transaction))
             .Select(r => new CouponLeg(r.LegId, r.FixtureId, r.MarketId, r.SelectionId, r.Odds, r.IsBanker, r.Position, (LegOutcome?)r.Outcome))];
 
-    public async Task<bool> TryInsertEvaluationAsync(IndexedLeg leg, int resultVersion, LegOutcome outcome) =>
+    public async Task<bool> TryInsertEvaluationAsync(IndexedLeg leg, int resultVersion, LegOutcome outcome, decimal? odds = null) =>
         await connection.ExecuteScalarAsync<int>(Sql.Get("Settle.InsertEvaluation"),
-            new { leg.LegId, ResultVersion = resultVersion, leg.CouponId, Outcome = (byte)outcome, Now = time.GetUtcNow() }, transaction) == 1;
+            new { leg.LegId, ResultVersion = resultVersion, leg.CouponId, Outcome = (byte)outcome, Odds = odds, Now = time.GetUtcNow() }, transaction) == 1;
 
     public Task<IndexedCoupon?> LockCouponAsync(Guid couponId) =>
         connection.QuerySingleOrDefaultAsync<IndexedCoupon>(Sql.Get("Settle.LockCoupon"), new { CouponId = couponId }, transaction);

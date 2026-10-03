@@ -1,1 +1,1 @@
-SELECT BetId, Folds, UnitStake FROM settlement.Bets WHERE CouponId = @CouponId ORDER BY BetId;
+SELECT BetId, Folds, UnitStake, AccaBoostPercent FROM settlement.Bets WHERE CouponId = @CouponId ORDER BY BetId;

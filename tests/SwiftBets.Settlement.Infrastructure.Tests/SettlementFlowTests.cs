@@ -41,6 +41,39 @@ public sealed class SettlementFlowTests(SqlServerFixture sql, RedisFixture redis
     }
 
     [Fact]
+    public async Task A_bet_builder_wins_as_one_leg_and_a_boosted_acca_pays_its_bonus()
+    {
+        var flow = await Flow.CreateAsync(sql, redis);
+        var builder = flow.Builder("b1", ("home", 2.00m), ("over", 1.80m));
+        var boosted = flow.Acca(("b2", "home", 2.00m), ("b3", "home", 2.00m));
+        boosted = boosted with { Bets = [boosted.Bets[0] with { AccaBoostPercent = 10m }] };
+        await flow.PlaceAsync(builder);
+        await flow.PlaceAsync(boosted);
+        await flow.ResultAsync("b1", 1, ResultStatus.Official, 3, 1);
+        await flow.ResultAsync("b2", 1, ResultStatus.Official, 1, 0);
+        await flow.ResultAsync("b3", 1, ResultStatus.Official, 1, 0);
+
+        (await flow.SettlementsAsync(builder.CouponId)).ShouldBe([(1, 3_760L)]);
+
+        // R10 at 4.00 returns R40; 10% of the R30 winnings adds R3.
+        (await flow.SettlementsAsync(boosted.CouponId)).ShouldBe([(1, 4_300L)]);
+    }
+
+    [Fact]
+    public async Task A_bet_builder_with_a_voided_market_is_void_when_one_component_remains()
+    {
+        var flow = await Flow.CreateAsync(sql, redis);
+        var builder = flow.Builder("b4", ("home", 2.00m), ("over", 1.80m));
+        await flow.PlaceAsync(builder);
+        await flow.ResultAsync("b4", 1, ResultStatus.Official, 2, 0);
+
+        (await flow.ManualAsync(new ManualResultV1(Guid.NewGuid(), ManualResultScope.Market, ManualResultAction.Void, builder.Legs[0].FixtureId,
+            $"{builder.Legs[0].FixtureId}-ou25", null, null, null, "abandoned", Guid.NewGuid(), DateTimeOffset.UtcNow))).ShouldBe(1);
+
+        (await flow.SettlementsAsync(builder.CouponId)).ShouldBe([(1, 0L), (2, 1_000L)]);
+    }
+
+    [Fact]
     public async Task Integrity_digest_returns_only_the_latest_settlement_of_a_resettled_coupon()
     {
         var flow = await Flow.CreateAsync(sql, redis);
@@ -339,6 +372,19 @@ public sealed class SettlementFlowTests(SqlServerFixture sql, RedisFixture redis
             return new CouponPlacedV2(Guid.NewGuid(), Guid.NewGuid(), stake, payout,
                 [.. legs.Select(l => new CouponLegV2(Guid.NewGuid(), Scoped(l.Fixture), $"{Scoped(l.Fixture)}-m", l.Selection, l.Odds, 1, false))],
                 [new CouponBetV2(Guid.NewGuid(), legs.Length == 1 ? "single" : "accumulator", [legs.Length], 1, stake, stake, payout)], placedAt);
+        }
+
+        /// <summary>A single bet builder at R10 over components in the 1x2 and ou25 markets of one fixture.</summary>
+        public CouponPlacedV2 Builder(string fixture, params (string Selection, decimal Odds)[] parts)
+        {
+            var components = parts.Select(p => new BuilderComponentV1($"{Scoped(fixture)}-{(p.Selection is "over" or "under" ? "ou25" : "1x2")}", p.Selection, p.Odds)).ToList();
+            var leg = new BetBuilderLegV1(components, BetBuilderPricing.FactorsFor(components, new Dictionary<string, decimal>()), 5m);
+            var odds = BetBuilderPricing.Price(components, leg.PairFactors, leg.MarginPercent);
+            var stake = new Money(1_000, "ZAR");
+            var payout = new Money((long)(1_000 * odds), "ZAR");
+            return new CouponPlacedV2(Guid.NewGuid(), Guid.NewGuid(), stake, payout,
+                [new CouponLegV2(Guid.NewGuid(), Scoped(fixture), BetBuilderPricing.MarketId, BetBuilderPricing.SelectionId(components), odds, 1, false, leg)],
+                [new CouponBetV2(Guid.NewGuid(), "single", [1], 1, stake, stake, payout)], DateTimeOffset.UtcNow);
         }
 
         /// <summary>The first leg is a banker; the rest make a Trixie at R1 a line.</summary>
